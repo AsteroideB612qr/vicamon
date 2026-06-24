@@ -7,7 +7,7 @@ const USDC_MINT       = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'; // USDC 
 const USDC_DECIMALS   = 6;
 const MIN_AMOUNT      = 100_000; // mínimo 0.10 USDC = 100,000 micro-USDC
 const CHECK_INTERVAL  = 15_000;  // cada 15 segundos (reduce rate limiting)
-const GAME_SERVER_URL = 'http://localhost:3000/payment';
+const GAME_SERVER_URL = 'http://localhost:' + (process.env.PORT || 3000) + '/payment';
 
 // RPCs gratuitos y confiables — en orden de prioridad
 const RPC_ENDPOINTS = [
