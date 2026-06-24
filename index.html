@@ -265,7 +265,7 @@ p.sub{font-size:12px;color:rgba(255,255,255,.4);margin-bottom:18px}
   <div style="font-size:11px;color:rgba(255,255,255,.3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em">Jugadores en sala</div>
   <div id="low-hp-warning" style="display:none;margin-bottom:12px">
     <div style="background:rgba(239,159,39,.1);border:0.5px solid rgba(239,159,39,.3);border-radius:8px;padding:10px 14px;font-size:12px;color:#EF9F27;margin-bottom:8px">
-      ⚠ Con menos de 100 HP solo puedes retar al Zodiac Master
+      ⚠ Con menos de 100 HP no puedes apostar, pero puedes hacer Entrenamientos o retar al Master
     </div>
     <div id="lobby-deposit-widget"></div>
   </div>
@@ -409,7 +409,7 @@ const EL={fuego:'#E8621A',tierra:'#7A9A3E',aire:'#4A9EFF',agua:'#2C6AA0'};
 const STCSS={agresivo:'background:rgba(216,90,48,.2);color:#F0997B',defensivo:'background:rgba(15,110,86,.2);color:#5DCAA5',tactico:'background:rgba(83,74,183,.2);color:#AFA9EC',equilibrado:'background:rgba(55,138,221,.2);color:#85B7EB',veneno:'background:rgba(83,150,40,.2);color:#9ECC5A',caos:'background:rgba(212,83,126,.2);color:#ED93B1',soporte:'background:rgba(130,80,180,.2);color:#CFA9EC'};
 
 let ws=null, myId=null, myName='', myBeast='', myRole='', oppName='', oppBeast='', battleId='';
-let mySt={}, oppSt={}, pendingFrom=null;
+let mySt={}, oppSt={}, pendingFrom=null, pendingIsTraining=false;
 let reconnectTimer=null;
 let myWallet='';
 let myCurrentHP=0; // global HP tracker
@@ -504,8 +504,8 @@ async function checkHPNow(fromConnect=false) {
       document.getElementById('step-name').style.pointerEvents='auto';
     } else {
       document.getElementById('step-charge').style.display='block';
-      document.getElementById('step-name').style.opacity='.4';
-      document.getElementById('step-name').style.pointerEvents='none';
+      document.getElementById('step-name').style.opacity='1'; // FORCE ENABLE
+      document.getElementById('step-name').style.pointerEvents='auto'; // FORCE ENABLE
     }
   } catch(e) {
     document.getElementById('wallet-hp').textContent = 'Error al verificar';
@@ -697,10 +697,13 @@ function handleMsg(m){
   }
   if(m.type==='challenged'){
     pendingFrom=m.fromId;
+    pendingIsTraining = !!m.isTraining; // NEW
     const b=BEASTS[m.fromBeast]||{name:m.fromBeast,img:''};
     document.getElementById('ch-img').src=b.img;
     document.getElementById('ch-title').textContent=`¡Reto de ${m.fromName}!`;
-    document.getElementById('ch-sub').textContent=`${m.fromName} quiere batallar con su ${b.name}. ¿Aceptas el combate?`;
+    document.getElementById('ch-sub').textContent=pendingIsTraining
+      ? `${m.fromName} quiere un ENTRENAMIENTO con su ${b.name}. (Sin apostar HP)`
+      : `${m.fromName} quiere batallar con su ${b.name}. ¿Aceptas el combate?`;
     document.getElementById('modal-challenged').classList.remove('hidden');
   }
   if(m.type==='battle_start'){
@@ -708,12 +711,16 @@ function handleMsg(m){
     const empty={hp:100,maxHp:100,poisonDmg:0,poisonTurns:0,burnDmg:0,burnTurns:0,shield:0,shieldReflect:0,reflect50:0,stun:false,recharge:0,regen:0,regenTurns:0,blind:0,weakAtk:0,weaken:0,corrode:0,analyzed:0,lastDmgReceived:0};
     mySt={...empty}; oppSt={...empty};
     window._isCpuBattle=!!m.isCpu;
+    window._isTrainingBattle=!!m.isTraining; // NEW
     const isCpu=!!m.isCpu;
-    const startMsg=isCpu
-      ? `¡Zodiac Master invoca a ${BEASTS[oppBeast]?.name||oppBeast}! Prepárate...`
-      : `¡Combate! ${myName} (${BEASTS[myBeast]?.name}) vs ${oppName} (${BEASTS[oppBeast]?.name})`;
+    const isTraining=!!m.isTraining; // NEW
+    let startMsg='';
+    if(isTraining) startMsg = `¡Entrenamiento amistoso! ${myName} (${BEASTS[myBeast]?.name}) vs ${oppName} (${BEASTS[oppBeast]?.name})`;
+    else if(isCpu) startMsg = `¡Zodiac Master invoca a ${BEASTS[oppBeast]?.name||oppBeast}! Prepárate...`;
+    else startMsg = `¡Combate! ${myName} (${BEASTS[myBeast]?.name}) vs ${oppName} (${BEASTS[oppBeast]?.name})`;
     show('s-battle');
     // For CPU battles the CPU attacks first, so yourTurn=false at start
+    // For Training or PvP, the challenger goes first.
     renderBattle(!isCpu,[{t:startMsg,c:'hi'}]);
   }
   if(m.type==='battle_state'){
@@ -764,13 +771,24 @@ function handleMsg(m){
   if(m.type==='battle_end'){
     const won=m.won;
     const isCpuResult=m.isCpu||window._isCpuBattle||oppName==='Zodiac Master';
+    const isTrainingResult=m.isTraining||window._isTrainingBattle; // NEW
     const winnerHp=m.winnerHp||0;
     const newHp=m.newHp||0;
     show('s-result');
-    if(!isCpuResult) updateHPDisplay(newHp);
+    if(!isCpuResult && !isTrainingResult) updateHPDisplay(newHp); // MODIFIED
     const b1=BEASTS[myBeast],b2=BEASTS[oppBeast];
     let resultBody='';
-    if(isCpuResult){
+    if(isTrainingResult){ // NEW BLOCK FOR TRAINING
+      const xpWon = won ? (m.winnerXp||0) : (m.loserXp||0);
+      resultBody=`<div style="background:rgba(130,80,180,.08);border:0.5px solid rgba(130,80,180,.2);border-radius:10px;padding:14px;margin:14px 0;text-align:left">
+        <div style="font-size:11px;color:#CFA9EC;margin-bottom:10px;text-transform:uppercase;letter-spacing:.08em">Modo Entrenamiento</div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:13px;color:rgba(255,255,255,.6)">Experiencia obtenida</span>
+          <span style="font-size:13px;color:#CFA9EC;font-weight:600">+${xpWon} XP</span>
+        </div>
+        <div style="font-size:11px;color:rgba(255,255,255,.35);margin-top:8px;text-align:center">Sin riesgo de HP · Solo por diversión</div>
+      </div>`;
+    } else if(isCpuResult){
       resultBody=`<div style="background:rgba(93,202,165,.08);border:0.5px solid rgba(93,202,165,.2);border-radius:10px;padding:14px;margin:14px 0;text-align:center">
         <div style="font-size:20px;margin-bottom:4px">&#127891;</div>
         <div style="font-size:13px;color:#5DCAA5;font-weight:600">Combate de entrenamiento</div>
@@ -825,7 +843,7 @@ function handleMsg(m){
       <div class="r-sub">${myName} &#183; ${b1?.name} vs ${oppName} &#183; ${b2?.name}</div>
       ${resultBody}
       <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-        ${!isCpuResult&&newHp>0?`<button class="btn btn-sm" style="background:rgba(239,159,39,.15);border-color:rgba(239,159,39,.4);color:#EF9F27" onclick="show('s-pick');buildPickGrid()">&#128176; Hacer Cashout</button>`:''}
+        ${!isCpuResult&&!isTrainingResult&&newHp>0?`<button class="btn btn-sm" style="background:rgba(239,159,39,.15);border-color:rgba(239,159,39,.4);color:#EF9F27" onclick="show('s-pick');buildPickGrid()">&#128176; Hacer Cashout</button>`:''}
         <button class="btn btn-blue" onclick="backToLobby()">Volver al lobby</button>
       </div>`;
   }
@@ -885,7 +903,10 @@ function renderLobby(others){
           <div class="p-beast">${b.name} · <span style="color:${hpColor};font-size:10px">${rivalHp} HP</span></div>
         </div>
       </div>
-      <button class="btn btn-blue btn-sm" ${canChallenge?'':'disabled'} onclick="sendChallenge(${p.id},'${p.name}')" title="${!canChallenge?'Se necesitan 100 HP mínimo para batallar':''}">⚔ Retar</button>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sm" style="background:rgba(130,80,180,.15);border-color:rgba(130,80,180,.35);color:#CFA9EC" onclick="sendChallengeTraining(${p.id},'${p.name}')">🤝 Entrenar</button>
+        <button class="btn btn-blue btn-sm" ${canChallenge?'':'disabled'} onclick="sendChallenge(${p.id},'${p.name}')" title="${!canChallenge?'Se necesitan 100 HP mínimo para retar':''}">⚔ Retar</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -941,18 +962,24 @@ function updateHPDisplay(hp){
 }
 
 function sendChallenge(targetId,name){
-  if(confirm(`¿Retar a ${name} a combate?`)) ws.send(JSON.stringify({type:'challenge',targetId}));
+  if(confirm(`¿Retar a ${name} a combate por HP?`)) ws.send(JSON.stringify({type:'challenge',targetId}));
+}
+function sendChallengeTraining(targetId,name){ // NEW FUNCTION
+  if(confirm(`¿Retar a ${name} a un ENTRENAMIENTO? (Sin apostar HP)`)) ws.send(JSON.stringify({type:'challenge_training',targetId}));
 }
 function challengeMaster(){
   ws.send(JSON.stringify({type:'challenge_cpu'}));
 }
 function acceptChallenge(){
   document.getElementById('modal-challenged').classList.add('hidden');
-  if(pendingFrom!==null) ws.send(JSON.stringify({type:'accept',fromId:pendingFrom}));
+  if(pendingFrom!==null) ws.send(JSON.stringify({type:'accept',fromId:pendingFrom, isTraining: pendingIsTraining}));
+  pendingIsTraining=false; // reset
+  pendingFrom=null;
 }
 function rejectChallenge(){
   document.getElementById('modal-challenged').classList.add('hidden');
   pendingFrom=null;
+  pendingIsTraining=false;
 }
 
 function renderBattle(yourTurn, logs){

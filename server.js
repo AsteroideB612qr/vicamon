@@ -43,7 +43,6 @@ const MIME = {
 const server = http.createServer((req, res) => {
   const urlPath = req.url.split('?')[0];
 
-  // GET /hp?wallet=xxx
   if (urlPath === '/hp') {
     const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet') || '';
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -51,7 +50,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // POST /payment  (from payment-monitor)
   if (urlPath === '/payment' && req.method === 'POST') {
     let body = '';
     req.on('data', c => body += c);
@@ -62,15 +60,13 @@ const server = http.createServer((req, res) => {
           res.writeHead(200); res.end(JSON.stringify({ ok: false, reason: 'duplicate' })); return;
         }
         processedTx.add(signature);
-        const hp = Math.round((amount / 100_000) * 100); // 100_000 micro-USDC = 100 HP
+        const hp = Math.round((amount / 100_000) * 100);
         const newBalance = addHP(wallet, hp);
         console.log(`[PAGO] ${wallet.slice(0,8)}... +${hp} HP → total ${newBalance} HP`);
-        // Notify player if connected
         lobby.forEach(p => {
           if (p.wallet === wallet) send(p.ws, { type: 'hp_updated', hp: newBalance });
         });
         res.writeHead(200); res.end(JSON.stringify({ ok: true, wallet, hp, newBalance }));
-        // Check platform auto-transfer
         checkPlatformTransfer();
       } catch (e) {
         res.writeHead(400); res.end(JSON.stringify({ error: e.message }));
@@ -79,7 +75,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Static files
   const file    = urlPath === '/' ? '/index.html' : urlPath;
   const fp      = path.join(__dirname, file);
   fs.readFile(fp, (err, data) => {
@@ -90,8 +85,8 @@ const server = http.createServer((req, res) => {
 });
 
 const wss        = new WebSocketServer({ server });
-const lobby      = new Map();   // id -> { ws, name, beast, wallet, inBattle, id }
-const battles    = new Map();   // battleId -> battle object
+const lobby      = new Map();
+const battles    = new Map();
 const processedTx= new Set();
 let   nextId     = 1;
 function uid() { return nextId++; }
@@ -112,6 +107,8 @@ function pushBattle(bId) {
   const b = battles.get(bId); if (!b) return;
   const p1 = lobby.get(b.p1id), p2 = lobby.get(b.p2id);
   if (!p1 || !p2) return;
+  
+  // Si es entrenamiento PvP, no enviamos HP real, enviamos 0 para que el cliente sepa
   const base = { type: 'battle_state', battleId: bId,
     p1: { name: p1.name, beast: p1.beast, state: b.st1 },
     p2: { name: p2.name, beast: p2.beast, state: b.st2 },
@@ -120,22 +117,16 @@ function pushBattle(bId) {
   send(p2.ws, { ...base, yourTurn: b.turnId === b.p2id });
 }
 
-// ── Platform auto-transfer ────────────────────────────────────────────────────
 async function checkPlatformTransfer() {
   const usdc = getPlatformUsdc();
   if (usdc < PLATFORM_THRESHOLD) return;
-  console.log(`[PLATFORM] ${usdc} USDC acumulados → transfiriendo a wallet personal...`);
   try {
     const sig = await sendUSDC(PLATFORM_WALLET, usdc);
     const hpCleared = Math.round(usdc / USDC_PER_HP);
     clearPlatformHp(hpCleared);
-    console.log(`[PLATFORM OK] ${usdc} USDC enviados | tx: ${sig.slice(0,20)}...`);
-  } catch (e) {
-    console.error(`[PLATFORM ERROR] ${e.message}`);
-  }
+  } catch (e) {}
 }
 
-// ── State ─────────────────────────────────────────────────────────────────────
 function newState() {
   return { hp:100, maxHp:100, poisonDmg:0, poisonTurns:0, burnDmg:0, burnTurns:0,
     shield:0, shieldReflect:0, reflect50:0, stun:false, recharge:0,
@@ -272,29 +263,31 @@ function tickEffects(st, name) {
 function endBattle(bId, winnerId, loserId, winnerHp, forfeit=false) {
   const b      = battles.get(bId);
   const isCpu  = b?.isCpu || false;
+  const isTraining = b?.isTraining || false; // NUEVO: Bandera de entrenamiento PvP
   const winner = lobby.get(winnerId);
   const loser  = lobby.get(loserId);
   const hp     = forfeit ? 100 : Math.max(0, Math.min(100, winnerHp));
 
-  if (isCpu) {
-    // Free training — no HP changes
-    console.log(`[TRAINING] ${winner?.name||'?'} vs Zodiac Master — sin cambios de HP`);
-    send(winner?.ws, { type:'battle_end', won:true,  isCpu:true, winnerHp:hp, forfeit });
-    send(loser?.ws,  { type:'battle_end', won:false, isCpu:true, winnerHp:hp });
+  if (isTraining) {
+    // ENTRENAMIENTO PVP - Sin HP reales, solo XP visual
+    const winnerXp = 50 + Math.floor(Math.random() * 50); // XP aleatorio
+    const loserXp = 15 + Math.floor(Math.random() * 15);
+    console.log(`[TRAINING PVP] ${winner?.name||'?'} derrotó a ${loser?.name||'?'}`);
+    send(winner?.ws, { type:'battle_end', won:true, isTraining:true, winnerXp, loserXp, forfeit });
+    send(loser?.ws, { type:'battle_end', won:false, isTraining:true, winnerXp, loserXp });
+  } else if (isCpu) {
+    console.log(`[TRAINING CPU] ${winner?.name||'?'} vs Master — sin cambios de HP`);
+    send(winner?.ws, { type:'battle_end', won:true, isCpu:true, winnerHp:hp, forfeit });
+    send(loser?.ws, { type:'battle_end', won:false, isCpu:true, winnerHp:hp });
   } else {
-    // Real PvP — settle HP balances
+    // PvP REAL con HP
     const winnerWallet = winner?.wallet || '';
     const loserWallet  = loser?.wallet  || '';
     const result = settleMatch(winnerWallet, loserWallet, hp);
-    console.log(`[SETTLE] ${winner?.name} +${100+hp} HP (total ${result.winnerNewHp}) | Plataforma: ${result.platformHp} HP (${result.platformUsdc} USDC)`);
-
     const winnerUsdc  = parseFloat(((100 + hp) * USDC_PER_HP).toFixed(3));
     const platformUsdc= parseFloat(((100 - hp) * USDC_PER_HP).toFixed(3));
-
-    send(winner?.ws, { type:'battle_end', won:true,  isCpu:false, winnerHp:hp, winnerUsdc, platformUsdc, newHp: result.winnerNewHp, forfeit });
-    send(loser?.ws,  { type:'battle_end', won:false, isCpu:false, winnerHp:hp, winnerUsdc, platformUsdc, newHp: getHP(loserWallet) });
-
-    // Check if platform earnings hit threshold
+    send(winner?.ws, { type:'battle_end', won:true, isCpu:false, winnerHp:hp, winnerUsdc, platformUsdc, newHp: result.winnerNewHp, forfeit });
+    send(loser?.ws, { type:'battle_end', won:false, isCpu:false, winnerHp:hp, winnerUsdc, platformUsdc, newHp: getHP(loserWallet) });
     checkPlatformTransfer();
   }
 
@@ -474,7 +467,7 @@ wss.on('connection', ws => {
       const wallet = msg.wallet||'';
       lobby.set(id,{ws,name:msg.name,beast:msg.beast,wallet,inBattle:false,id});
       const hp = getHP(wallet);
-      send(ws,{type:'joined',id,hp}); // send HP immediately on join
+      send(ws,{type:'joined',id,hp});
       pushLobby();
     }
 
@@ -483,34 +476,54 @@ wss.on('connection', ws => {
       if (p&&!p.inBattle){p.beast=msg.beast;pushLobby();}
     }
 
+    // Reto Normal (Apuesta HP)
     if (msg.type==='challenge') {
       const challenger=lobby.get(id);
       const target=lobby.get(msg.targetId);
       if (!challenger||!target||target.inBattle||challenger.inBattle) return;
-      // Check both have enough HP (always from server, never trust client display)
       const challengerHP = getHP(challenger.wallet);
       const targetHP     = getHP(target.wallet);
-      if (challengerHP < 100) { send(ws,{type:'error',msg:`Necesitas al menos 100 HP para retar. Tienes ${challengerHP} HP. Deposita USDC para continuar.`}); return; }
+      if (challengerHP < 100) { send(ws,{type:'error',msg:`Necesitas al menos 100 HP para retar. Tienes ${challengerHP} HP.`}); return; }
       if (targetHP     < 100) { send(ws,{type:'error',msg:`Ese jugador solo tiene ${targetHP} HP, necesita mínimo 100 HP.`}); return; }
-      send(target.ws,{type:'challenged',fromId:id,fromName:challenger.name,fromBeast:challenger.beast});
+      send(target.ws,{type:'challenged',fromId:id,fromName:challenger.name,fromBeast:challenger.beast, isTraining:false});
+    }
+
+    // NUEVO: Reto de Entrenamiento (Sin HP)
+    if (msg.type==='challenge_training') {
+      const challenger=lobby.get(id);
+      const target=lobby.get(msg.targetId);
+      if (!challenger||!target||target.inBattle||challenger.inBattle) return;
+      send(target.ws,{type:'challenged',fromId:id,fromName:challenger.name,fromBeast:challenger.beast, isTraining:true});
     }
 
     if (msg.type==='accept') {
       const p1=lobby.get(msg.fromId), p2=lobby.get(id);
       if (!p1||!p2||p1.inBattle||p2.inBattle) return;
-      if (!hasHP(p1.wallet,100)||!hasHP(p2.wallet,100)) {
-        send(p1.ws,{type:'error',msg:'Fondos insuficientes para iniciar la batalla.'}); return;
+      
+      if (msg.isTraining) {
+        // ACEPTAR ENTRENAMIENTO
+        p1.inBattle=true; p2.inBattle=true;
+        const bId=`btrain${uid()}`;
+        battles.set(bId,{p1id:msg.fromId,p2id:id,st1:newState(),st2:newState(),turnId:msg.fromId,logs:[{t:`¡Entrenamiento amistoso! ${p1.name} vs ${p2.name}`,c:'hi'}],isTraining:true});
+        send(p1.ws,{type:'battle_start',battleId:bId,role:'p1',opponent:p2.name,opponentBeast:p2.beast,isTraining:true});
+        send(p2.ws,{type:'battle_start',battleId:bId,role:'p2',opponent:p1.name,opponentBeast:p1.beast,isTraining:true});
+        pushLobby();
+        setTimeout(()=>pushBattle(bId),120);
+      } else {
+        // ACEPTAR RETO NORMAL
+        if (!hasHP(p1.wallet,100)||!hasHP(p2.wallet,100)) {
+          send(p1.ws,{type:'error',msg:'Fondos insuficientes para iniciar la batalla.'}); return;
+        }
+        lockHP(p1.wallet,100); lockHP(p2.wallet,100);
+        p1.inBattle=true; p2.inBattle=true;
+        const bId=`b${uid()}`;
+        battles.set(bId,{p1id:msg.fromId,p2id:id,st1:newState(),st2:newState(),turnId:msg.fromId,logs:[],isCpu:false});
+        battles.get(bId).logs.push({t:`¡Combate! ${p1.name} vs ${p2.name}`,c:'hi'});
+        send(p1.ws,{type:'battle_start',battleId:bId,role:'p1',opponent:p2.name,opponentBeast:p2.beast});
+        send(p2.ws,{type:'battle_start',battleId:bId,role:'p2',opponent:p1.name,opponentBeast:p1.beast});
+        pushLobby();
+        setTimeout(()=>pushBattle(bId),120);
       }
-      // Lock 100 HP from each player
-      lockHP(p1.wallet,100); lockHP(p2.wallet,100);
-      p1.inBattle=true; p2.inBattle=true;
-      const bId=`b${uid()}`;
-      battles.set(bId,{p1id:msg.fromId,p2id:id,st1:newState(),st2:newState(),turnId:msg.fromId,logs:[],isCpu:false});
-      battles.get(bId).logs.push({t:`¡Combate! ${p1.name} vs ${p2.name}`,c:'hi'});
-      send(p1.ws,{type:'battle_start',battleId:bId,role:'p1',opponent:p2.name,opponentBeast:p2.beast});
-      send(p2.ws,{type:'battle_start',battleId:bId,role:'p2',opponent:p1.name,opponentBeast:p1.beast});
-      pushLobby();
-      setTimeout(()=>pushBattle(bId),120);
     }
 
     if (msg.type==='attack') {
@@ -531,44 +544,29 @@ wss.on('connection', ws => {
       setTimeout(()=>{ pushCpuBattle(bId); scheduleCpuTurn(bId); },200);
     }
 
-    // Cashout request
     if (msg.type==='cashout') {
       const pl=lobby.get(id);
       if (!pl||pl.inBattle) { send(ws,{type:'cashout_result',ok:false,reason:'En batalla o no conectado'}); return; }
       const currentHp = getHP(pl.wallet);
       if (currentHp <= 0) { send(ws,{type:'cashout_result',ok:false,reason:'No tienes HP para retirar'}); return; }
       const usdcNeeded = parseFloat((currentHp * 0.001).toFixed(6));
-      console.log(`[CASHOUT] ${pl.name} quiere retirar ${currentHp} HP = ${usdcNeeded} USDC`);
-      // Check platform balance first
       getPlatformUSDCBalance().then(balance => {
-        console.log(`[CASHOUT] Balance plataforma: ${balance} USDC, necesita: ${usdcNeeded} USDC`);
         if (balance < usdcNeeded) {
-          send(ws,{type:'cashout_result',ok:false,
-            reason:`Fondos insuficientes en plataforma (${balance.toFixed(3)} USDC disponibles, necesitas ${usdcNeeded} USDC). Contacta al administrador.`});
-          return;
+          send(ws,{type:'cashout_result',ok:false, reason:`Fondos insuficientes en plataforma.`}); return;
         }
-        // Deduct HP and send USDC
         const result = cashout(pl.wallet);
         if (!result.ok) { send(ws,{type:'cashout_result',ok:false,reason:'Error al procesar'}); return; }
         send(ws,{type:'cashout_result',ok:true,hp:result.hp,usdc:result.usdc,status:'processing'});
         sendUSDC(pl.wallet, result.usdc)
-          .then(sig => {
-            console.log(`[CASHOUT OK] ${result.usdc} USDC → ${pl.wallet.slice(0,8)}... | tx: ${sig.slice(0,20)}...`);
-            send(ws,{type:'cashout_result',ok:true,hp:result.hp,usdc:result.usdc,status:'confirmed',tx:sig});
-            pushLobby();
-          })
+          .then(sig => send(ws,{type:'cashout_result',ok:true,hp:result.hp,usdc:result.usdc,status:'confirmed',tx:sig}))
           .catch(e => {
-            console.error(`[CASHOUT ERROR] ${e.message}`);
-            addHP(pl.wallet, result.hp); // refund HP
+            addHP(pl.wallet, result.hp);
             send(ws,{type:'cashout_result',ok:false,reason:'Error al enviar USDC: '+e.message});
           });
-      }).catch(e => {
-        send(ws,{type:'cashout_result',ok:false,reason:'No se pudo verificar balance: '+e.message});
-      });
+      }).catch(e => send(ws,{type:'cashout_result',ok:false,reason:'No se pudo verificar balance'}));
     }
 
     if (msg.type==='ping') {
-      // Client requesting lobby refresh
       const p=lobby.get(id);
       if(p) {
         const hp=getHP(p.wallet||'');
@@ -586,11 +584,13 @@ wss.on('connection', ws => {
   ws.on('close',()=>{
     const p=lobby.get(id); if (!p) return;
     battles.forEach((b,bId)=>{
-      if (b.isCpu && b.p2id===id) { battles.delete(bId); }
-      else if (b.p1id===id||b.p2id===id) {
+      if (b.isTraining && (b.p1id===id||b.p2id===id)) { 
+        battles.delete(bId); 
+      } else if (b.isCpu && b.p2id===id) { 
+        battles.delete(bId); 
+      } else if (b.p1id===id||b.p2id===id) {
         const otherId=b.p1id===id?b.p2id:b.p1id;
         const other=lobby.get(otherId);
-        // Unlock HP for both on disconnect
         if (p.wallet)     unlockHP(p.wallet, 100);
         if (other?.wallet) unlockHP(other.wallet, 100);
         endBattle(bId,otherId,id,100,true);
@@ -601,11 +601,7 @@ wss.on('connection', ws => {
   });
 });
 
-const PORT=process.env.PORT||3000;
-server.listen(PORT,()=>console.log(`Zodiac Battle corriendo en http://localhost:${PORT}`));
-
-// Iniciar el monitor de pagos en segundo plano después de 5 segundos
-// para no saturar la memoria del plan gratis de Render al arrancar
+// Iniciar el monitor de pagos en segundo plano automáticamente
 setTimeout(() => {
   try {
     require('./payment-monitor');
@@ -613,3 +609,6 @@ setTimeout(() => {
     console.error('[ERROR] No se pudo iniciar el monitor de pagos:', e.message);
   }
 }, 5000);
+
+const PORT=process.env.PORT||3000;
+server.listen(PORT,()=>console.log(`Zodiac Battle corriendo en http://localhost:${PORT}`));
