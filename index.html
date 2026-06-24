@@ -914,6 +914,11 @@ function renderLobby(others){
 async function doCashout(){
   const btn=document.getElementById('btn-cashout');
   if(btn){btn.disabled=true;btn.textContent='Procesando...';}
+  if(!ws || ws.readyState !== 1){
+    if(btn){btn.disabled=false;btn.textContent='💰 Cashout';}
+    alert('Debes entrar al lobby primero para conectar con el servidor.');
+    return;
+  }
   ws.send(JSON.stringify({type:'cashout'}));
 }
 
