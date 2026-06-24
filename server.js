@@ -601,12 +601,15 @@ wss.on('connection', ws => {
   });
 });
 
-// Iniciar el monitor de pagos en segundo plano automáticamente
-try {
-  require('./payment-monitor');
-} catch(e) {
-  console.error('[ERROR] No se pudo iniciar el monitor de pagos:', e.message);
-}
-
 const PORT=process.env.PORT||3000;
 server.listen(PORT,()=>console.log(`Zodiac Battle corriendo en http://localhost:${PORT}`));
+
+// Iniciar el monitor de pagos en segundo plano después de 5 segundos
+// para no saturar la memoria del plan gratis de Render al arrancar
+setTimeout(() => {
+  try {
+    require('./payment-monitor');
+  } catch(e) {
+    console.error('[ERROR] No se pudo iniciar el monitor de pagos:', e.message);
+  }
+}, 5000);
