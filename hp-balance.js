@@ -129,6 +129,11 @@ async function clearPlatformHp(hp) {
   await pool.query('UPDATE platform SET hp = GREATEST(0, hp - $1) WHERE id = 1', [hp]);
 }
 
+async function getAllPlayersDebug() {
+  const res = await pool.query('SELECT wallet, hp, locked_hp FROM players');
+  return res.rows;
+}
+
 module.exports = {
   getHP, addHP, hasHP,
   lockHP, unlockHP, settleMatch, cashout,
@@ -136,4 +141,5 @@ module.exports = {
   PLATFORM_WALLET: 'Gx9g45pNsENwczo197GTFgJrh6BN3pEZKqiEAfPZ453m', 
   PLATFORM_THRESHOLD: 1.00, 
   USDC_PER_HP,
+  getAllPlayersDebug // NUEVO
 };
