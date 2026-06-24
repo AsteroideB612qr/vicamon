@@ -1,112 +1,139 @@
-// ── HP Balance Manager v2 ─────────────────────────────────────────────────────
-const fs   = require('fs');
-const path = require('path');
-const FILE = path.join(__dirname, 'hp-balances.json');
+/const { Pool } = require('pg');
 
-const PLATFORM_WALLET = 'Gx9g45pNsENwczo197GTFgJrh6BN3pEZKqiEAfPZ453m';
-const PLATFORM_THRESHOLD = 1.00; // auto-transfer at 1 USDC
-const USDC_PER_HP = 0.001; // 1 HP = 0.001 USDC
+// Conectar a la base de datos de Render usando la variable de entorno
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+});
 
-function load() {
+// Crear tablas si no existen al arrancar
+pool.query(`
+  CREATE TABLE IF NOT EXISTS players (
+    wallet VARCHAR(50) PRIMARY KEY,
+    hp INTEGER DEFAULT 0,
+    locked_hp INTEGER DEFAULT 0
+  );
+`).catch(e => console.error("Error creando tabla players:", e));
+
+pool.query(`
+  CREATE TABLE IF NOT EXISTS platform (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    hp INTEGER DEFAULT 0
+  );
+`).catch(e => console.error("Error creando tabla platform:", e));
+
+pool.query(`INSERT INTO platform (id, hp) VALUES (1, 0) ON CONFLICT DO NOTHING;`).catch(e=>{});
+
+const USDC_PER_HP = 0.001;
+
+async function getHP(wallet) {
+  const res = await pool.query('SELECT hp FROM players WHERE wallet = $1', [wallet]);
+  return res.rows.length > 0 ? res.rows[0].hp : 0;
+}
+
+async function addHP(wallet, hp) {
+  await pool.query(`
+    INSERT INTO players (wallet, hp, locked_hp) VALUES ($1, $2, 0)
+    ON CONFLICT (wallet) DO UPDATE SET hp = players.hp + $2
+  `, [wallet, hp]);
+  return await getHP(wallet);
+}
+
+async function hasHP(wallet, amount = 100) {
+  return (await getHP(wallet)) >= amount;
+}
+
+async function lockHP(wallet, amount = 100) {
+  const client = await pool.connect();
   try {
-    const raw = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-    // Migrate old format { "wallet": hp } to new { players, platformHp, inMatch }
-    if (!raw.players) {
-      const players = {};
-      Object.entries(raw).forEach(([k, v]) => {
-        if (typeof v === 'number') players[k] = v;
-      });
-      const migrated = { players, platformHp: 0, inMatch: {} };
-      fs.writeFileSync(FILE, JSON.stringify(migrated, null, 2));
-      return migrated;
+    await client.query('BEGIN');
+    const res = await client.query('SELECT hp FROM players WHERE wallet = $1 FOR UPDATE', [wallet]);
+    const currentHp = res.rows.length > 0 ? res.rows[0].hp : 0;
+    if (currentHp < amount) {
+      await client.query('ROLLBACK');
+      return false;
     }
-    return raw;
-  } catch {
-    return { players: {}, platformHp: 0, inMatch: {} };
+    await client.query('UPDATE players SET hp = hp - $1, locked_hp = locked_hp + $1 WHERE wallet = $2', [amount, wallet]);
+    await client.query('COMMIT');
+    return true;
+  } catch(e) {
+    await client.query('ROLLBACK');
+    return false;
+  } finally {
+    client.release();
   }
 }
 
-function save(d) { fs.writeFileSync(FILE, JSON.stringify(d, null, 2)); }
-
-// ── Player HP ─────────────────────────────────────────────────────────────────
-function getHP(wallet)      { return load().players[wallet] || 0; }
-function getLockedHP(wallet){ return load().inMatch[wallet] || 0; }
-
-function addHP(wallet, hp) {
-  const d = load();
-  d.players[wallet] = (d.players[wallet] || 0) + hp;
-  save(d);
-  return d.players[wallet];
+async function unlockHP(wallet, amount = 100) {
+  await pool.query('UPDATE players SET hp = hp + $1, locked_hp = GREATEST(0, locked_hp - $1) WHERE wallet = $2', [amount, wallet]);
 }
 
-function hasHP(wallet, amount = 100) { return getHP(wallet) >= amount; }
-
-// Lock HP at match start — returns false if insufficient
-function lockHP(wallet, amount = 100) {
-  const d = load();
-  if ((d.players[wallet] || 0) < amount) return false;
-  d.players[wallet]  -= amount;
-  d.inMatch[wallet]   = (d.inMatch[wallet] || 0) + amount;
-  save(d);
-  return true;
+async function settleMatch(winnerWallet, loserWallet, winnerHp) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const hp = Math.max(0, Math.min(100, winnerHp));
+    
+    await client.query('UPDATE players SET locked_hp = GREATEST(0, locked_hp - 100), hp = hp + 100 + $1 WHERE wallet = $2', [hp, winnerWallet]);
+    await client.query('UPDATE players SET locked_hp = GREATEST(0, locked_hp - 100) WHERE wallet = $1', [loserWallet]);
+    await client.query('UPDATE platform SET hp = hp + (100 - $1) WHERE id = 1', [hp]);
+    
+    await client.query('COMMIT');
+    
+    const winnerNewHp = await getHP(winnerWallet);
+    const platformHp = await getPlatformHp();
+    return {
+      winnerNewHp,
+      platformHp,
+      platformUsdc: parseFloat((platformHp * USDC_PER_HP).toFixed(3))
+    };
+  } catch(e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 }
 
-// Release locked HP back (forfeit / cancel)
-function unlockHP(wallet, amount = 100) {
-  const d = load();
-  d.players[wallet]  = (d.players[wallet] || 0) + amount;
-  d.inMatch[wallet]  = Math.max(0, (d.inMatch[wallet] || 0) - amount);
-  save(d);
+async function cashout(wallet) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const res = await client.query('SELECT hp FROM players WHERE wallet = $1 FOR UPDATE', [wallet]);
+    const hp = res.rows.length > 0 ? res.rows[0].hp : 0;
+    if (hp <= 0) {
+      await client.query('ROLLBACK');
+      return { ok: false, reason: 'no_hp', hp: 0, usdc: 0 };
+    }
+    await client.query('UPDATE players SET hp = 0 WHERE wallet = $1', [wallet]);
+    await client.query('COMMIT');
+    return { ok: true, hp, usdc: parseFloat((hp * USDC_PER_HP).toFixed(6)) };
+  } catch(e) {
+    await client.query('ROLLBACK');
+    return { ok: false, reason: 'db_error', hp: 0, usdc: 0 };
+  } finally {
+    client.release();
+  }
 }
 
-// Settle a match result
-// winner gets back their 100 locked HP + winnerHp from loser pool
-// platform gets (100 - winnerHp) from loser pool
-// loser gets 0
-function settleMatch(winnerWallet, loserWallet, winnerHp) {
-  const d = load();
-  const hp = Math.max(0, Math.min(100, winnerHp));
-
-  // Release winner's locked HP + grant them the HP they won from loser
-  d.inMatch[winnerWallet] = Math.max(0, (d.inMatch[winnerWallet] || 0) - 100);
-  d.players[winnerWallet] = (d.players[winnerWallet] || 0) + 100 + hp;
-
-  // Release loser's locked HP to platform
-  d.inMatch[loserWallet]  = Math.max(0, (d.inMatch[loserWallet] || 0) - 100);
-  d.platformHp            = (d.platformHp || 0) + (100 - hp);
-
-  save(d);
-  return {
-    winnerNewHp:  d.players[winnerWallet],
-    platformHp:   d.platformHp,
-    platformUsdc: parseFloat((d.platformHp * USDC_PER_HP).toFixed(3)),
-  };
+async function getPlatformHp() {
+  const res = await pool.query('SELECT hp FROM platform WHERE id = 1');
+  return res.rows.length > 0 ? res.rows[0].hp : 0;
 }
 
-// ── Cashout ───────────────────────────────────────────────────────────────────
-function cashout(wallet) {
-  const d  = load();
-  const hp = d.players[wallet] || 0;
-  if (hp <= 0) return { ok: false, reason: 'no_hp', hp: 0, usdc: 0 };
-  d.players[wallet] = 0;
-  save(d);
-  const usdc = parseFloat((hp * USDC_PER_HP).toFixed(6));
-  return { ok: true, hp, usdc };
+async function getPlatformUsdc() {
+  return parseFloat(((await getPlatformHp()) * USDC_PER_HP).toFixed(6));
 }
 
-// ── Platform earnings ─────────────────────────────────────────────────────────
-function getPlatformHp()   { return load().platformHp || 0; }
-function getPlatformUsdc() { return parseFloat(((load().platformHp || 0) * USDC_PER_HP).toFixed(6)); }
-
-function clearPlatformHp(hp) {
-  const d = load();
-  d.platformHp = Math.max(0, (d.platformHp || 0) - hp);
-  save(d);
+async function clearPlatformHp(hp) {
+  await pool.query('UPDATE platform SET hp = GREATEST(0, hp - $1) WHERE id = 1', [hp]);
 }
 
 module.exports = {
-  getHP, getLockedHP, addHP, hasHP,
+  getHP, addHP, hasHP,
   lockHP, unlockHP, settleMatch, cashout,
   getPlatformHp, getPlatformUsdc, clearPlatformHp,
-  PLATFORM_WALLET, PLATFORM_THRESHOLD, USDC_PER_HP,
+  PLATFORM_WALLET: 'Gx9g45pNsENwczo197GTFgJrh6BN3pEZKqiEAfPZ453m', 
+  PLATFORM_THRESHOLD: 1.00, 
+  USDC_PER_HP,
 };
