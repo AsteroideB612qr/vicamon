@@ -1,0 +1,77 @@
+const {
+  Connection, Keypair, PublicKey, Transaction, sendAndConfirmTransaction
+} = require('@solana/web3.js');
+const {
+  getAssociatedTokenAddress,
+  createAssociatedTokenAccountInstruction,
+  createTransferCheckedInstruction,
+  getAccount,
+} = require('@solana/spl-token');
+const fs   = require('fs');
+const path = require('path');
+
+const USDC_MINT  = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'); // mainnet
+const DECIMALS   = 6;
+const RPCS = [
+  'https://api.mainnet-beta.solana.com',
+  'https://solana-mainnet.rpc.extrnode.com',
+  'https://solana.public-rpc.com',
+];
+
+async function getWorkingConnection() {
+  for (const rpc of RPCS) {
+    try {
+      const conn = new Connection(rpc, 'confirmed');
+      await conn.getLatestBlockhash(); // test connection
+      return conn;
+    } catch { continue; }
+  }
+  return new Connection(RPCS[0], 'confirmed');
+}
+
+const connection = new Connection(RPCS[0], 'confirmed');
+
+function loadPlatformWallet() {
+  // 1. Si estamos en la nube (Render), usar la variable de entorno secreta
+  if (process.env.PLATFORM_WALLET_SECRET) {
+    try {
+      const secret = JSON.parse(process.env.PLATFORM_WALLET_SECRET);
+      return Keypair.fromSecretKey(Uint8Array.from(secret));
+    } catch(e) {
+      console.error("Error leyendo la wallet desde variables de entorno:", e.message);
+      throw e;
+    }
+  }
+  // 2. Si estamos en tu PC local, usar el archivo de siempre
+  const raw = JSON.parse(fs.readFileSync(path.join(__dirname, 'platform-wallet.json'), 'utf8'));
+  return Keypair.fromSecretKey(Uint8Array.from(raw));
+}
+
+async function sendUSDC(toWalletAddress, amountUSDC) {
+  const platform    = loadPlatformWallet();
+  const toPublicKey = new PublicKey(toWalletAddress);
+  const amount      = Math.round(amountUSDC * Math.pow(10, DECIMALS));
+  const conn        = await getWorkingConnection();
+
+  const fromATA = await getAssociatedTokenAddress(USDC_MINT, platform.publicKey);
+  const toATA   = await getAssociatedTokenAddress(USDC_MINT, toPublicKey);
+
+  const tx = new Transaction();
+
+  try { await getAccount(conn, toATA); }
+  catch {
+    tx.add(createAssociatedTokenAccountInstruction(
+      platform.publicKey, toATA, toPublicKey, USDC_MINT
+    ));
+  }
+
+  tx.add(createTransferCheckedInstruction(
+    fromATA, USDC_MINT, toATA, platform.publicKey, amount, DECIMALS
+  ));
+
+  const signature = await sendAndConfirmTransaction(conn, tx, [platform]);
+  console.log(`[TRANSFER ✓] ${amountUSDC} USDC → ${toWalletAddress.slice(0,8)}... | tx: ${signature.slice(0,20)}...`);
+  return signature;
+}
+
+module.exports = { sendUSDC };
