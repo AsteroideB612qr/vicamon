@@ -1,4 +1,4 @@
-/const { Pool } = require('pg');
+const { Pool } = require('pg');
 
 // Conectar a la base de datos de Render usando la variable de entorno
 const pool = new Pool({
