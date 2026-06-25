@@ -249,6 +249,7 @@ function handleMsg(m){
   if(m.type==='joined'){ myId=m.id; if(m.hp !== undefined) updateHPDisplay(m.hp); updateLobbyBadge(); if(!isKicked) show('s-lobby'); checkHPNow(false); }
   if(m.type==='kicked'){ isKicked=true; alert(m.msg); show('s-login'); if(ws) ws.close(); }
   if(m.type==='lobby'){ const others=m.players.filter(p=>p.id!==myId); document.getElementById('lbl-online').textContent=m.players.length; renderLobby(others); }
+  if(m.type==='leaderboard_update'){ renderLeaderboard(m.top); }
   if(m.type==='chat_message'){ handleChatMessage(m); }
   if(m.type==='challenged'){
     pendingFrom=m.fromId; pendingIsTraining = !!m.isTraining;
@@ -375,6 +376,26 @@ function handleChatMessage(m){
   chatBox.appendChild(msgDiv);
   while(chatBox.children.length > 50) { chatBox.removeChild(chatBox.firstChild); }
   chatBox.scrollTop = chatBox.scrollHeight;
+}
+function renderLeaderboard(top) {
+  const podium = document.getElementById('leaderboard-podium');
+  if (!podium) return;
+  if (!top || top.length === 0) {
+    podium.innerHTML = '<div style="flex:1;color:rgba(255,255,255,.3);text-align:center;font-size:11px;padding:20px 0">Gana batallas reales para aparecer aquí</div>';
+    return;
+  }
+  podium.innerHTML = top.map((p, i) => {
+    const medals = ['🥇', '🥈', '🥉'];
+    const colors = ['#F5A623', '#C0C0C0', '#CD7F32'];
+    const name = p.last_name || 'Anónimo';
+    const wins = p.wins || 0;
+    const losses = p.losses || 0;
+    return `<div style="flex:1;background:rgba(255,255,255,.04);border:0.5px solid ${colors[i]};border-radius:10px;padding:10px 6px;text-align:center;backdrop-filter:blur(4px)">
+      <div style="font-size:20px;margin-bottom:2px">${medals[i] || '🏆'}</div>
+      <div style="font-size:12px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</div>
+      <div style="font-size:9px;color:rgba(255,255,255,.5);margin-top:3px">${wins}V · ${losses}D</div>
+    </div>`;
+  }).join('');
 }
 function renderBattle(yourTurn, logs){
   document.getElementById('f-me').innerHTML=panelHTML(mySt,myBeast,myName+' (tú)','me');
