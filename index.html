@@ -413,6 +413,7 @@ let mySt={}, oppSt={}, pendingFrom=null, pendingIsTraining=false;
 let reconnectTimer=null;
 let myWallet='';
 let myCurrentHP=0; // global HP tracker
+let isKicked=false; // Para evitar reconexión si nos echan por doble pestaña
 
 // Phantom connection
 function copyWallet() {
@@ -443,7 +444,6 @@ function getPhantom() {
 }
 
 async function connectPhantom() {
-  // Give Phantom time to inject if page just loaded
   await new Promise(r => setTimeout(r, 100));
   const phantom = getPhantom();
   if (!phantom || !phantom.isPhantom) {
@@ -458,7 +458,6 @@ async function connectPhantom() {
     document.getElementById('wallet-connected').style.display='block';
     document.getElementById('wallet-addr').textContent = myWallet.slice(0,8)+'...'+myWallet.slice(-6);
     document.getElementById('wallet-hp').textContent = 'Verificando...';
-    // Always enable step-name regardless of HP
     const sn = document.getElementById('step-name');
     if(sn){ sn.style.opacity='1'; sn.style.pointerEvents='auto'; }
     await checkHPNow(true);
@@ -468,7 +467,6 @@ async function connectPhantom() {
   }
 }
 
-// Auto-reconnect if Phantom was previously connected
 window.addEventListener('load', async () => {
   await new Promise(r => setTimeout(r, 500));
   const ph2 = getPhantom();
@@ -494,9 +492,8 @@ async function checkHPNow(fromConnect=false) {
     const loginHp = document.getElementById('wallet-hp');
     if(loginHp){ loginHp.textContent=hp+' HP'; loginHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; }
     updateHPDisplay(hp);
-    // If lobby is visible, re-render it with updated HP
     if(document.getElementById('s-lobby').classList.contains('active') && ws){
-      ws.send(JSON.stringify({type:'ping'})); // trigger lobby refresh
+      ws.send(JSON.stringify({type:'ping'}));
     }
     if (hp >= 100) {
       document.getElementById('step-charge').style.display='none';
@@ -504,8 +501,8 @@ async function checkHPNow(fromConnect=false) {
       document.getElementById('step-name').style.pointerEvents='auto';
     } else {
       document.getElementById('step-charge').style.display='block';
-      document.getElementById('step-name').style.opacity='1'; // FORCE ENABLE
-      document.getElementById('step-name').style.pointerEvents='auto'; // FORCE ENABLE
+      document.getElementById('step-name').style.opacity='1';
+      document.getElementById('step-name').style.pointerEvents='auto';
     }
   } catch(e) {
     document.getElementById('wallet-hp').textContent = 'Error al verificar';
@@ -595,7 +592,6 @@ function buildPickGrid(){
       <div class="elbar" style="background:${EL[b.el]}"></div>
     </div>`;
   });
-  // Detail panel slot
   html+=`<div class="beast-detail" id="beast-detail-panel"></div>`;
   document.getElementById('pick-grid').innerHTML=html;
 }
@@ -654,7 +650,6 @@ function goPickBeast(){
   if(!myName){alert('Escribe tu nombre de combate');return;}
   buildPickGrid();
   show('s-pick');
-  // Show HP immediately from global, then refresh from server
   updateHPDisplay(myCurrentHP);
   checkHPNow(false);
 }
@@ -666,6 +661,7 @@ function enterLobby(){
 
 function connectWS(){
   if(ws){try{ws.close();}catch{}}
+  isKicked=false;
   const proto=location.protocol==='https:'?'wss':'ws';
   ws=new WebSocket(`${proto}://${location.host}`);
   ws.onopen=()=>{
@@ -676,19 +672,23 @@ function connectWS(){
   ws.onerror=()=>{};
   ws.onclose=()=>{
     const inBattle=document.getElementById('s-battle').classList.contains('active');
-    if(!inBattle) reconnectTimer=setTimeout(()=>{ if(myName&&myBeast) connectWS(); },2000);
+    if(!inBattle && !isKicked) reconnectTimer=setTimeout(()=>{ if(myName&&myBeast) connectWS(); },2000);
   };
 }
 
 function handleMsg(m){
   if(m.type==='joined'){
     myId=m.id;
-    // Update HP immediately so renderLobby has correct value
     if(m.hp !== undefined) updateHPDisplay(m.hp);
     updateLobbyBadge();
-    show('s-lobby');
-    // Refresh HP from server to confirm
+    if(!isKicked) show('s-lobby');
     checkHPNow(false);
+  }
+  if(m.type==='kicked'){
+    isKicked=true;
+    alert(m.msg);
+    show('s-login');
+    if(ws) ws.close();
   }
   if(m.type==='lobby'){
     const others=m.players.filter(p=>p.id!==myId);
@@ -697,7 +697,7 @@ function handleMsg(m){
   }
   if(m.type==='challenged'){
     pendingFrom=m.fromId;
-    pendingIsTraining = !!m.isTraining; // NEW
+    pendingIsTraining = !!m.isTraining;
     const b=BEASTS[m.fromBeast]||{name:m.fromBeast,img:''};
     document.getElementById('ch-img').src=b.img;
     document.getElementById('ch-title').textContent=`¡Reto de ${m.fromName}!`;
@@ -711,16 +711,14 @@ function handleMsg(m){
     const empty={hp:100,maxHp:100,poisonDmg:0,poisonTurns:0,burnDmg:0,burnTurns:0,shield:0,shieldReflect:0,reflect50:0,stun:false,recharge:0,regen:0,regenTurns:0,blind:0,weakAtk:0,weaken:0,corrode:0,analyzed:0,lastDmgReceived:0};
     mySt={...empty}; oppSt={...empty};
     window._isCpuBattle=!!m.isCpu;
-    window._isTrainingBattle=!!m.isTraining; // NEW
+    window._isTrainingBattle=!!m.isTraining;
     const isCpu=!!m.isCpu;
-    const isTraining=!!m.isTraining; // NEW
+    const isTraining=!!m.isTraining;
     let startMsg='';
     if(isTraining) startMsg = `¡Entrenamiento amistoso! ${myName} (${BEASTS[myBeast]?.name}) vs ${oppName} (${BEASTS[oppBeast]?.name})`;
     else if(isCpu) startMsg = `¡Zodiac Master invoca a ${BEASTS[oppBeast]?.name||oppBeast}! Prepárate...`;
     else startMsg = `¡Combate! ${myName} (${BEASTS[myBeast]?.name}) vs ${oppName} (${BEASTS[oppBeast]?.name})`;
     show('s-battle');
-    // For CPU battles the CPU attacks first, so yourTurn=false at start
-    // For Training or PvP, the challenger goes first.
     renderBattle(!isCpu,[{t:startMsg,c:'hi'}]);
   }
   if(m.type==='battle_state'){
@@ -771,14 +769,14 @@ function handleMsg(m){
   if(m.type==='battle_end'){
     const won=m.won;
     const isCpuResult=m.isCpu||window._isCpuBattle||oppName==='Zodiac Master';
-    const isTrainingResult=m.isTraining||window._isTrainingBattle; // NEW
+    const isTrainingResult=m.isTraining||window._isTrainingBattle;
     const winnerHp=m.winnerHp||0;
     const newHp=m.newHp||0;
     show('s-result');
-    if(!isCpuResult && !isTrainingResult) updateHPDisplay(newHp); // MODIFIED
+    if(!isCpuResult && !isTrainingResult) updateHPDisplay(newHp);
     const b1=BEASTS[myBeast],b2=BEASTS[oppBeast];
     let resultBody='';
-    if(isTrainingResult){ // NEW BLOCK FOR TRAINING
+    if(isTrainingResult){
       const xpWon = won ? (m.winnerXp||0) : (m.loserXp||0);
       resultBody=`<div style="background:rgba(130,80,180,.08);border:0.5px solid rgba(130,80,180,.2);border-radius:10px;padding:14px;margin:14px 0;text-align:left">
         <div style="font-size:11px;color:#CFA9EC;margin-bottom:10px;text-transform:uppercase;letter-spacing:.08em">Modo Entrenamiento</div>
@@ -886,7 +884,6 @@ function renderLobby(others){
   _lastLobbyPlayers=others;
   const list=document.getElementById('players-list');
   const myHp=myCurrentHP;
-  // Show low HP warning if needed
   const hpWarnEl=document.getElementById('lobby-hp-warn');
   if(hpWarnEl) hpWarnEl.style.display=myHp<100?'block':'none';
   if(!others.length){list.innerHTML='<p class="empty-lobby">No hay otros jugadores en el lobby...<br>Comparte la URL con tus amigos</p>';return;}
@@ -923,8 +920,7 @@ async function doCashout(){
 }
 
 function updateHPDisplay(hp){
-  myCurrentHP = hp || 0; // global tracker used by lobby
-  // Pick screen badge — element is pick-hp-val
+  myCurrentHP = hp || 0;
   const el=document.getElementById('pick-hp-val');
   if(el){
     el.textContent=hp+' HP';
@@ -932,34 +928,28 @@ function updateHPDisplay(hp){
   }
   const elUsdc=document.getElementById('pick-usdc-val');
   if(elUsdc) elUsdc.textContent='= '+(hp*0.001).toFixed(3)+' USDC';
-  // Login screen badge
   const loginHp=document.getElementById('wallet-hp');
   if(loginHp){
     loginHp.textContent=hp+' HP';
     loginHp.style.color=hp>=100?'#5DCAA5':'#EF9F27';
   }
-  // Cashout button
   const btn=document.getElementById('btn-cashout');
   if(btn){
     btn.style.display=hp>0?'inline-block':'none';
     btn.disabled=false;
     btn.textContent='💰 Cashout';
   }
-  // Low HP warning in lobby
   const warn=document.getElementById('low-hp-warning');
   if(warn) warn.style.display=hp<100?'block':'none';
-  // Login deposit box
   const charge=document.getElementById('step-charge');
   if(charge) charge.style.display = hp<100 ? 'block' : 'none';
 
-  // Deposit widget in pick and lobby screens
   const depHtml = hp<100 ? depositWidgetHTML() : '';
   const pickDep = document.getElementById('pick-deposit-widget');
   if(pickDep) pickDep.innerHTML = depHtml;
   const lobbyDep = document.getElementById('lobby-deposit-widget');
   if(lobbyDep) lobbyDep.innerHTML = depHtml;
 
-  // Refresh lobby if visible
   if(document.getElementById('s-lobby')?.classList.contains('active')){
     const cur = document.getElementById('players-list');
     if(cur) renderLobbyFromCache();
@@ -969,7 +959,7 @@ function updateHPDisplay(hp){
 function sendChallenge(targetId,name){
   if(confirm(`¿Retar a ${name} a combate por HP?`)) ws.send(JSON.stringify({type:'challenge',targetId}));
 }
-function sendChallengeTraining(targetId,name){ // NEW FUNCTION
+function sendChallengeTraining(targetId,name){
   if(confirm(`¿Retar a ${name} a un ENTRENAMIENTO? (Sin apostar HP)`)) ws.send(JSON.stringify({type:'challenge_training',targetId}));
 }
 function challengeMaster(){
@@ -978,7 +968,7 @@ function challengeMaster(){
 function acceptChallenge(){
   document.getElementById('modal-challenged').classList.add('hidden');
   if(pendingFrom!==null) ws.send(JSON.stringify({type:'accept',fromId:pendingFrom, isTraining: pendingIsTraining}));
-  pendingIsTraining=false; // reset
+  pendingIsTraining=false;
   pendingFrom=null;
 }
 function rejectChallenge(){
