@@ -5,7 +5,6 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
-// Crear tablas y columnas si no existen
 pool.query(`
   CREATE TABLE IF NOT EXISTS players (
     wallet VARCHAR(50) PRIMARY KEY,
@@ -23,14 +22,20 @@ pool.query(`
 
 pool.query(`INSERT INTO platform (id, hp) VALUES (1, 0) ON CONFLICT DO NOTHING;`).catch(e=>{});
 
-// NUEVO: Agregar columnas de estadísticas si no existen (para bases de datos ya creadas)
+// Agregar columnas de estadísticas si no existen
 pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS wins INTEGER DEFAULT 0;`).catch(e=>{});
 pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS losses INTEGER DEFAULT 0;`).catch(e=>{});
 pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS last_name VARCHAR(20);`).catch(e=>{});
 
 const USDC_PER_HP = 0.001;
 
-// NUEVO: Guardar el nickname cuando el jugador entra al lobby
+// Función para ver la base de datos (secreta)
+async function getAllPlayersDebug() {
+  const res = await pool.query('SELECT wallet, hp, locked_hp, wins, losses, last_name FROM players');
+  return res.rows;
+}
+
+// Guardar el nickname cuando el jugador entra al lobby
 async function updatePlayerName(wallet, name) {
   await pool.query(`
     INSERT INTO players (wallet, last_name) VALUES ($1, $2)
@@ -38,13 +43,13 @@ async function updatePlayerName(wallet, name) {
   `, [wallet, name]);
 }
 
-// NUEVO: Sumar victorias y derrotas
+// Sumar victorias y derrotas
 async function updatePlayerStats(winnerWallet, loserWallet) {
   await pool.query('UPDATE players SET wins = wins + 1 WHERE wallet = $1', [winnerWallet]);
   await pool.query('UPDATE players SET losses = losses + 1 WHERE wallet = $1', [loserWallet]);
 }
 
-// NUEVO: Obtener el Top 3 jugadores
+// Obtener el Top 3 jugadores
 async function getTopPlayers(limit = 3) {
   const res = await pool.query('SELECT last_name, wins, losses FROM players WHERE wins > 0 ORDER BY wins DESC, losses ASC LIMIT $1', [limit]);
   return res.rows;
@@ -161,5 +166,5 @@ module.exports = {
   PLATFORM_THRESHOLD: 1.00, 
   USDC_PER_HP,
   getAllPlayersDebug,
-  updatePlayerName, updatePlayerStats, getTopPlayers // NUEVO
+  updatePlayerName, updatePlayerStats, getTopPlayers
 };
