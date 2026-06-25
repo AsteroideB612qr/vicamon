@@ -450,16 +450,35 @@ async function connectPhantom() {
   // Si no detectamos Phantom (típicamente en móviles)
   if (!phantom || !phantom.isPhantom) {
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const currentUrl = window.location.href;
     
     if (isMobile) {
-      // Redirigir a la app de Phantom abriendo esta misma página en su navegador interno
-      const currentUrl = window.location.href;
-      window.location.href = `https://phantom.app/ul/browse/${currentUrl}`;
+      const deepLink = `https://phantom.app/ul/browse/${currentUrl}`;
+      const noPhantomDiv = document.getElementById('no-phantom');
+      
+      // Mostrar instrucciones claras para móvil
+      noPhantomDiv.style.display = 'block';
+      noPhantomDiv.innerHTML = `
+        <div style="color:#F0997B; font-size:13px; line-height:1.5; text-align:left">
+          <strong>📱 Para jugar desde tu móvil:</strong><br><br>
+          1. Abre la app de <strong>Phantom</strong> en tu teléfono.<br>
+          2. Toca el ícono del navegador (🌐) en la parte inferior.<br>
+          3. Pega este enlace para entrar al juego:
+          <div style="background:rgba(0,0,0,.3); padding:8px; margin-top:8px; border-radius:6px; word-break:break-all; font-family:monospace; font-size:10px; color:#85B7EB; cursor:pointer; display:flex; justify-content:space-between; align-items:center" onclick="copyText('${currentUrl}')">
+            <span>${currentUrl}</span>
+            <span style="margin-left:8px; white-space:nowrap">📋</span>
+          </div>
+          <br>
+          <button class="btn btn-blue btn-sm" style="width:100%; padding:10px" onclick="window.location.href='${deepLink}'">Intentar abrir automáticamente</button>
+        </div>
+      `;
+      document.getElementById('btn-phantom').style.display = 'none';
       return;
     }
     
     // Si es PC y no lo tiene, mostrar el mensaje de siempre
     document.getElementById('no-phantom').style.display='block';
+    document.getElementById('no-phantom').innerHTML = 'Phantom no detectado. <a href="https://phantom.app" target="_blank" style="color:#F0997B;text-decoration:underline">Instalalo aqui</a> y recarga la pagina.';
     document.getElementById('btn-phantom').style.display='none';
     return;
   }
@@ -479,6 +498,13 @@ async function connectPhantom() {
     console.error('Phantom error:', e);
     alert('No se pudo conectar Phantom. Asegurate de tener la extension instalada y activa.');
   }
+}
+
+// Nueva función auxiliar para copiar texto
+function copyText(text) {
+  navigator.clipboard.writeText(text)
+    .then(() => alert('¡Enlace copiado! Ábrelo en el navegador de Phantom.'))
+    .catch(() => alert('Copia este enlace manualmente: ' + text));
 }
 
 window.addEventListener('load', async () => {
