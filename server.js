@@ -55,7 +55,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (urlPath === '/payment' && req.method === 'POST') {
+   if (urlPath === '/payment' && req.method === 'POST') {
+    // VERIFICACIÓN DE SEGURIDAD
+    const secret = req.headers['x-internal-secret'];
+    if (secret !== (process.env.INTERNAL_SECRET || 'dev-secret')) {
+      res.writeHead(403); res.end(JSON.stringify({ error: 'Forbidden' }));
+      return;
+    }
+
     let body = '';
     req.on('data', c => body += c);
     req.on('end', async () => {
