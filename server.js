@@ -469,6 +469,16 @@ wss.on('connection', ws => {
 
     if (msg.type==='join') {
       const wallet = msg.wallet||'';
+      
+      // EVITAR PESTAÑAS DUPLICADAS
+      for (const [oldId, p] of lobby) {
+        if (p.wallet === wallet && oldId !== id) {
+          send(p.ws, { type:'kicked', msg:'Tu wallet se conectó en otra pestaña. Esta sesión se cerrará.' });
+          if (!p.inBattle) lobby.delete(oldId);
+          try { p.ws.close(); } catch(e) {}
+        }
+      }
+
       lobby.set(id,{ws,name:msg.name,beast:msg.beast,wallet,inBattle:false,id});
       const hp = await getHP(wallet);
       send(ws,{type:'joined',id,hp});
@@ -581,7 +591,6 @@ wss.on('connection', ws => {
     }
   });
 
-  // --- CORRECCIÓN DEL BUG DE DESCONEXIÓN ---
   ws.on('close', async ()=>{
     const p=lobby.get(id); if (!p) return;
     for (const [bId, b] of battles) {
@@ -591,9 +600,6 @@ wss.on('connection', ws => {
         battles.delete(bId); 
       } else if (b.p1id===id||b.p2id===id) {
         const otherId=b.p1id===id?b.p2id:b.p1id;
-        const other=lobby.get(otherId);
-        // El endBattle con forfeit=true ya se encarga de toda la matemática de HP.
-        // Hacer unlockHP aquí causaba que se duplicaran los HP al ganador.
         endBattle(bId,otherId,id,100,true);
       }
     }
