@@ -9,6 +9,8 @@ const {
   getAllPlayersDebug
 } = require('./hp-balance');
 const { sendUSDC } = require('./transfer');
+const BEASTS = require('./beasts.js'); // NUEVO: Cargar Vicamons desde archivo externo
+const BEAST_KEYS = Object.keys(BEASTS);
 
 async function getPlatformUSDCBalance() {
   const { Connection, PublicKey } = require('@solana/web3.js');
@@ -56,7 +58,6 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (urlPath === '/payment' && req.method === 'POST') {
-    // VERIFICACIÓN DE SEGURIDAD
     const secret = req.headers['x-internal-secret'];
     if (secret !== (process.env.INTERNAL_SECRET || 'dev-secret')) {
       res.writeHead(403); res.end(JSON.stringify({ error: 'Forbidden' }));
@@ -145,22 +146,6 @@ function newState() {
     corrode:0, analyzed:0, lastDmgReceived:0 };
 }
 
-const BEASTS = {
-  aries:      { attacks:[{d:32,acc:72, self:8, fx:null,pierce:true},{d:20,acc:100,self:0,fx:null},{d:48,acc:50, self:18,fx:null},{d:25,acc:85, self:0,fx:'stun'}]},
-  tauro:      { attacks:[{d:0, acc:100,self:0, fx:'shield3'},{d:22,acc:88, self:0,fx:'slow'},{d:0, acc:100,self:0,fx:'heal28'},{d:35,acc:65, self:0,fx:null}]},
-  geminis:    { attacks:[{d:14,acc:90, self:0, fx:'double'},{d:0, acc:100,self:0,fx:'swap'},{d:18,acc:100,self:0,fx:'blind'},{d:0, acc:95, self:0,fx:'chaos'}]},
-  cancer:     { attacks:[{d:0, acc:100,self:0, fx:'shield2r'},{d:15,acc:100,self:0,fx:'drain12'},{d:20,acc:85, self:0,fx:'slow2'},{d:28,acc:70, self:0,fx:'shieldbonus'}]},
-  leo:        { attacks:[{d:0, acc:100,self:0, fx:'weaken'},{d:28,acc:88, self:0,fx:'weakbonus'},{d:20,acc:100,self:0,fx:'burn'},{d:42,acc:62, self:0,fx:null}]},
-  virgo:      { attacks:[{d:0, acc:100,self:0, fx:'analyze'},{d:24,acc:88, self:0,fx:null,pierce:true},{d:0,acc:100,self:0,fx:'purify'},{d:35,acc:70, self:0,fx:'stateBonus'}]},
-  libra:      { attacks:[{d:0, acc:100,self:0, fx:'equalize'},{d:0, acc:100,self:0,fx:'counter'},{d:25,acc:85, self:0,fx:'lowHPbonus'},{d:30,acc:75,self:0,fx:'stun_ifless'}]},
-  escorpio:   { attacks:[{d:6, acc:100,self:0, fx:'poison5'},{d:22,acc:85, self:0,fx:'poisonBonus'},{d:10,acc:100,self:0,fx:'corrode'},{d:35,acc:65, self:0,fx:'poisonDouble'}]},
-  sagitario:  { attacks:[{d:26,acc:92, self:0, fx:null},{d:45,acc:62, self:0,fx:'recharge'},{d:10,acc:80, self:0,fx:'triple'},{d:30,acc:75, self:0,fx:'random_fx'}]},
-  capricornio:{ attacks:[{d:0, acc:100,self:0, fx:'fortress'},{d:28,acc:78, self:0,fx:'weakAtk'},{d:0, acc:100,self:0,fx:'reflect50'},{d:40,acc:58,self:0,fx:null}]},
-  acuario:    { attacks:[{d:0, acc:88, self:0, fx:'chaosHi'},{d:18,acc:100,self:0,fx:'stun_blind'},{d:55,acc:48, self:0,fx:'overload'},{d:20,acc:95, self:0,fx:'random_fx'}]},
-  piscis:     { attacks:[{d:22,acc:85, self:0, fx:'poison3l'},{d:0, acc:100,self:0,fx:'heal35'},{d:15,acc:100,self:0,fx:'selfheal10'},{d:38,acc:63,self:0,fx:'lowHPx15'}]},
-};
-const BEAST_KEYS = Object.keys(BEASTS);
-
 function applyAtk(aSt, dSt, atk, aName) {
   const logs = [];
   const blind   = aSt.blind   > 0 ? 30  : 0;
@@ -168,12 +153,12 @@ function applyAtk(aSt, dSt, atk, aName) {
   const anaMul  = aSt.analyzed> 0 ? 1.15: 1;
   const fx = atk.fx;
 
-  if (fx==='shield3')  { aSt.shield=3; aSt.shieldReflect=0;  logs.push({t:`${aName} activa Escudo ×3`,c:'good'}); return logs; }
-  if (fx==='shield2r') { aSt.shield=2; aSt.shieldReflect=12; logs.push({t:`${aName} activa Escudo Lunar`,c:'good'}); return logs; }
+  if (fx==='shield2')  { aSt.shield=2; aSt.shieldReflect=0;  logs.push({t:`${aName} activa Escudo ×2`,c:'good'}); return logs; }
+  if (fx==='shield1r') { aSt.shield=1; aSt.shieldReflect=15; logs.push({t:`${aName} activa Escudo Lunar`,c:'good'}); return logs; }
   if (fx==='reflect50'){ aSt.reflect50=1; logs.push({t:`${aName} prepara Reflejo 50%`,c:'good'}); return logs; }
-  if (fx==='heal28')   { aSt.hp=Math.min(aSt.maxHp,aSt.hp+28); logs.push({t:`${aName} se cura 28 HP`,c:'good'}); return logs; }
-  if (fx==='heal35')   { aSt.hp=Math.min(aSt.maxHp,aSt.hp+35); logs.push({t:`${aName} se cura 35 HP`,c:'good'}); return logs; }
-  if (fx==='fortress') { aSt.shield=2; aSt.hp=Math.min(aSt.maxHp,aSt.hp+20); aSt.regen=8; aSt.regenTurns=2; logs.push({t:`${aName} activa Fortaleza`,c:'good'}); return logs; }
+  if (fx==='heal20')   { aSt.hp=Math.min(aSt.maxHp,aSt.hp+20); logs.push({t:`${aName} se cura 20 HP`,c:'good'}); return logs; }
+  if (fx==='heal30')   { aSt.hp=Math.min(aSt.maxHp,aSt.hp+30); logs.push({t:`${aName} se cura 30 HP`,c:'good'}); return logs; }
+  if (fx==='fortress') { aSt.shield=2; aSt.hp=Math.min(aSt.maxHp,aSt.hp+15); aSt.regen=6; aSt.regenTurns=2; logs.push({t:`${aName} activa Fortaleza`,c:'good'}); return logs; }
   if (fx==='analyze')  { aSt.analyzed=3; logs.push({t:`${aName} analiza al rival`,c:'good'}); return logs; }
   
   if (fx==='purify') {
@@ -191,7 +176,7 @@ function applyAtk(aSt, dSt, atk, aName) {
 
   if (fx==='chaos'||fx==='chaosHi') {
     if (Math.random()*100 >= atk.acc-blind) { logs.push({t:`${aName} → ¡falló!`,c:'bad'}); return logs; }
-    const dmg=fx==='chaosHi'?Math.floor(Math.random()*41)+10:Math.floor(Math.random()*41)+5;
+    const dmg=fx==='chaosHi'?Math.floor(Math.random()*36)+10:Math.floor(Math.random()*36)+5;
     dSt.hp=Math.max(0,dSt.hp-dmg);
     logs.push({t:`${aName} → Caos: ${dmg} HP`,c:'bad'}); return logs;
   }
@@ -222,7 +207,7 @@ function applyAtk(aSt, dSt, atk, aName) {
   let dmg=atk.d;
   if (fx==='double')       dmg=atk.d*2;
   if (fx==='triple')       dmg=atk.d*3;
-  if (fx==='drain12')      { dmg=15; aSt.hp=Math.min(aSt.maxHp,aSt.hp+12); }
+  if (fx==='drain10')      { dmg=15; aSt.hp=Math.min(aSt.maxHp,aSt.hp+10); }
   if (fx==='selfheal10')   aSt.hp=Math.min(aSt.maxHp,aSt.hp+10);
   if (fx==='shieldbonus' && dSt.shield>0) dmg+=10;
   if (fx==='weakbonus'   && dSt.weaken>0) dmg+=10;
@@ -259,7 +244,7 @@ function applyAtk(aSt, dSt, atk, aName) {
     if(r==='weakAtk'){dSt.weakAtk=2;extra=' +⬇atk';}
   }
   const selfNote=atk.self>0?` (-${atk.self} propio)`:'';
-  const healNote=fx==='drain12'?' (drena 12)':fx==='selfheal10'?' (+10 propio)':'';
+  const healNote=fx==='drain10'?' (drena 10)':fx==='selfheal10'?' (+10 propio)':'';
   logs.push({t:`${aName} → ${dmg} HP${selfNote}${healNote}${extra}`,c:dmg>25?'bad':'normal'});
   return logs;
 }
@@ -376,8 +361,8 @@ function cpuPickAttack(cpuSt, oppSt, beastKey) {
     let s=2;
     if (a.d>30 && oppSt.hp<40) s=5;
     if ((a.fx==='poison5'||a.fx==='poison3l') && oppSt.poisonTurns===0 && oppSt.hp>40) s=4;
-    if ((a.fx==='heal28'||a.fx==='heal35'||a.fx==='fortress') && cpuSt.hp<35) s=5;
-    if ((a.fx==='shield3'||a.fx==='shield2r') && cpuSt.hp<45 && cpuSt.shield===0) s=4;
+    if ((a.fx==='heal20'||a.fx==='heal30'||a.fx==='fortress') && cpuSt.hp<35) s=5;
+    if ((a.fx==='shield2'||a.fx==='shield1r') && cpuSt.hp<45 && cpuSt.shield===0) s=4;
     if (a.fx==='poisonDouble' && oppSt.poisonTurns>0) s=6;
     if (a.fx==='recharge' && cpuSt.recharge===0 && oppSt.hp>60) s=1;
     return s;
