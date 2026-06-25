@@ -581,6 +581,7 @@ wss.on('connection', ws => {
     }
   });
 
+  // --- CORRECCIÓN DEL BUG DE DESCONEXIÓN ---
   ws.on('close', async ()=>{
     const p=lobby.get(id); if (!p) return;
     for (const [bId, b] of battles) {
@@ -591,8 +592,8 @@ wss.on('connection', ws => {
       } else if (b.p1id===id||b.p2id===id) {
         const otherId=b.p1id===id?b.p2id:b.p1id;
         const other=lobby.get(otherId);
-        if (p.wallet)     await unlockHP(p.wallet, 100);
-        if (other?.wallet) await unlockHP(other.wallet, 100);
+        // El endBattle con forfeit=true ya se encarga de toda la matemática de HP.
+        // Hacer unlockHP aquí causaba que se duplicaran los HP al ganador.
         endBattle(bId,otherId,id,100,true);
       }
     }
