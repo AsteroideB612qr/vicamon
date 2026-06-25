@@ -1,12 +1,11 @@
 const { Pool } = require('pg');
 
-// Conectar a la base de datos de Render usando la variable de entorno
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
-// Crear tablas si no existen al arrancar
+// Crear tablas y columnas si no existen
 pool.query(`
   CREATE TABLE IF NOT EXISTS players (
     wallet VARCHAR(50) PRIMARY KEY,
@@ -24,7 +23,32 @@ pool.query(`
 
 pool.query(`INSERT INTO platform (id, hp) VALUES (1, 0) ON CONFLICT DO NOTHING;`).catch(e=>{});
 
+// NUEVO: Agregar columnas de estadísticas si no existen (para bases de datos ya creadas)
+pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS wins INTEGER DEFAULT 0;`).catch(e=>{});
+pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS losses INTEGER DEFAULT 0;`).catch(e=>{});
+pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS last_name VARCHAR(20);`).catch(e=>{});
+
 const USDC_PER_HP = 0.001;
+
+// NUEVO: Guardar el nickname cuando el jugador entra al lobby
+async function updatePlayerName(wallet, name) {
+  await pool.query(`
+    INSERT INTO players (wallet, last_name) VALUES ($1, $2)
+    ON CONFLICT (wallet) DO UPDATE SET last_name = $2
+  `, [wallet, name]);
+}
+
+// NUEVO: Sumar victorias y derrotas
+async function updatePlayerStats(winnerWallet, loserWallet) {
+  await pool.query('UPDATE players SET wins = wins + 1 WHERE wallet = $1', [winnerWallet]);
+  await pool.query('UPDATE players SET losses = losses + 1 WHERE wallet = $1', [loserWallet]);
+}
+
+// NUEVO: Obtener el Top 3 jugadores
+async function getTopPlayers(limit = 3) {
+  const res = await pool.query('SELECT last_name, wins, losses FROM players WHERE wins > 0 ORDER BY wins DESC, losses ASC LIMIT $1', [limit]);
+  return res.rows;
+}
 
 async function getHP(wallet) {
   const res = await pool.query('SELECT hp FROM players WHERE wallet = $1', [wallet]);
@@ -129,11 +153,6 @@ async function clearPlatformHp(hp) {
   await pool.query('UPDATE platform SET hp = GREATEST(0, hp - $1) WHERE id = 1', [hp]);
 }
 
-async function getAllPlayersDebug() {
-  const res = await pool.query('SELECT wallet, hp, locked_hp FROM players');
-  return res.rows;
-}
-
 module.exports = {
   getHP, addHP, hasHP,
   lockHP, unlockHP, settleMatch, cashout,
@@ -141,5 +160,6 @@ module.exports = {
   PLATFORM_WALLET: 'Gx9g45pNsENwczo197GTFgJrh6BN3pEZKqiEAfPZ453m', 
   PLATFORM_THRESHOLD: 1.00, 
   USDC_PER_HP,
-  getAllPlayersDebug // NUEVO
+  getAllPlayersDebug,
+  updatePlayerName, updatePlayerStats, getTopPlayers // NUEVO
 };
