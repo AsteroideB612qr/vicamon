@@ -170,6 +170,15 @@ body{font-family:system-ui,sans-serif;background:#0a0a0f;color:#fff;min-height:1
 h1{font-size:20px;font-weight:600;margin-bottom:4px}
 h2{font-size:16px;font-weight:600;margin-bottom:12px}
 p.sub{font-size:12px;color:rgba(255,255,255,.4);margin-bottom:18px}
+
+/* ── CHAT ── */
+.chat-wrap{margin-top:20px;border-top:0.5px solid rgba(255,255,255,.1);padding-top:16px}
+.chat-box{background:rgba(0,0,0,.4);border:0.5px solid rgba(255,255,255,.1);border-radius:10px;padding:10px;height:180px;overflow-y:auto;margin-bottom:10px;backdrop-filter:blur(4px)}
+.chat-msg{font-size:13px;margin-bottom:6px;line-height:1.4;word-break:break-word}
+.chat-name{color:#85B7EB;font-weight:600;margin-right:6px}
+.chat-input{flex:1;background:rgba(255,255,255,.07);border:0.5px solid rgba(255,255,255,.15);border-radius:8px;padding:10px 14px;color:#fff;font-size:14px;outline:none}
+.chat-input:focus{border-color:rgba(255,255,255,.4)}
+.chat-empty{color:rgba(255,255,255,.3);text-align:center;font-size:12px;margin-top:60px}
 </style>
 </head>
 <body>
@@ -273,6 +282,18 @@ p.sub{font-size:12px;color:rgba(255,255,255,.4);margin-bottom:18px}
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
     <button class="btn btn-sm" onclick="goChangeBeast()">Cambiar Vicamon</button>
     <button class="btn btn-sm btn-red" onclick="leaveLobby()">Salir</button>
+  </div>
+
+  <!-- CHAT DEL LOBBY -->
+  <div class="chat-wrap">
+    <h2 style="margin:0 0 10px 0;font-size:16px">Chat del Lobby</h2>
+    <div class="chat-box" id="chat-box">
+      <div class="chat-empty">Sé el primero en escribir un mensaje...</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <input id="chat-input" class="chat-input" placeholder="Escribe un mensaje..." maxlength="200" onkeydown="if(event.key==='Enter')sendChatMessage()">
+      <button class="btn btn-blue" onclick="sendChatMessage()">Enviar</button>
+    </div>
   </div>
 </div>
 
@@ -447,7 +468,6 @@ async function connectPhantom() {
   await new Promise(r => setTimeout(r, 100));
   const phantom = getPhantom();
   
-  // Si no detectamos Phantom (típicamente en móviles)
   if (!phantom || !phantom.isPhantom) {
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     const currentUrl = window.location.href;
@@ -456,7 +476,6 @@ async function connectPhantom() {
       const deepLink = `https://phantom.app/ul/browse/${currentUrl}`;
       const noPhantomDiv = document.getElementById('no-phantom');
       
-      // Mostrar instrucciones claras para móvil
       noPhantomDiv.style.display = 'block';
       noPhantomDiv.innerHTML = `
         <div style="color:#F0997B; font-size:13px; line-height:1.5; text-align:left">
@@ -476,14 +495,12 @@ async function connectPhantom() {
       return;
     }
     
-    // Si es PC y no lo tiene, mostrar el mensaje de siempre
     document.getElementById('no-phantom').style.display='block';
     document.getElementById('no-phantom').innerHTML = 'Phantom no detectado. <a href="https://phantom.app" target="_blank" style="color:#F0997B;text-decoration:underline">Instalalo aqui</a> y recarga la pagina.';
     document.getElementById('btn-phantom').style.display='none';
     return;
   }
   
-  // Si sí detecta Phantom (PC o navegador interno de Phantom en móvil)
   try {
     const resp = await phantom.connect();
     myWallet = resp.publicKey.toString();
@@ -500,7 +517,6 @@ async function connectPhantom() {
   }
 }
 
-// Nueva función auxiliar para copiar texto
 function copyText(text) {
   navigator.clipboard.writeText(text)
     .then(() => alert('¡Enlace copiado! Ábrelo en el navegador de Phantom.'))
@@ -734,6 +750,9 @@ function handleMsg(m){
     const others=m.players.filter(p=>p.id!==myId);
     document.getElementById('lbl-online').textContent=m.players.length;
     renderLobby(others);
+  }
+  if(m.type==='chat_message'){
+    handleChatMessage(m);
   }
   if(m.type==='challenged'){
     pendingFrom=m.fromId;
@@ -1006,7 +1025,7 @@ function challengeMaster(){
   ws.send(JSON.stringify({type:'challenge_cpu'}));
 }
 function acceptChallenge(){
-  document.getElementById('modal-challenged').classList.add('hidden');
+  document.getElementById('modal-challenged').classList.remove('hidden');
   if(pendingFrom!==null) ws.send(JSON.stringify({type:'accept',fromId:pendingFrom, isTraining: pendingIsTraining}));
   pendingIsTraining=false;
   pendingFrom=null;
@@ -1015,6 +1034,33 @@ function rejectChallenge(){
   document.getElementById('modal-challenged').classList.add('hidden');
   pendingFrom=null;
   pendingIsTraining=false;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function sendChatMessage(){
+  const input = document.getElementById('chat-input');
+  const msg = input.value.trim();
+  if(msg && ws && ws.readyState === 1){
+    ws.send(JSON.stringify({type:'chat_message', text:msg}));
+    input.value = '';
+  }
+}
+
+function handleChatMessage(m){
+  const chatBox = document.getElementById('chat-box');
+  if(chatBox.querySelector('.chat-empty')) chatBox.innerHTML = '';
+  
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'chat-msg';
+  msgDiv.innerHTML = `<span class="chat-name">${escapeHtml(m.name)}:</span> <span style="color:rgba(255,255,255,.8)">${escapeHtml(m.text)}</span>`;
+  
+  chatBox.appendChild(msgDiv);
+  chatBox.scrollTop = chatBox.scrollHeight;
 }
 
 function renderBattle(yourTurn, logs){
