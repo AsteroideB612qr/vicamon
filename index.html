@@ -446,11 +446,25 @@ function getPhantom() {
 async function connectPhantom() {
   await new Promise(r => setTimeout(r, 100));
   const phantom = getPhantom();
+  
+  // Si no detectamos Phantom (típicamente en móviles)
   if (!phantom || !phantom.isPhantom) {
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+      // Redirigir a la app de Phantom abriendo esta misma página en su navegador interno
+      const currentUrl = window.location.href;
+      window.location.href = `https://phantom.app/ul/browse/${currentUrl}`;
+      return;
+    }
+    
+    // Si es PC y no lo tiene, mostrar el mensaje de siempre
     document.getElementById('no-phantom').style.display='block';
     document.getElementById('btn-phantom').style.display='none';
     return;
   }
+  
+  // Si sí detecta Phantom (PC o navegador interno de Phantom en móvil)
   try {
     const resp = await phantom.connect();
     myWallet = resp.publicKey.toString();
