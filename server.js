@@ -55,7 +55,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-   if (urlPath === '/payment' && req.method === 'POST') {
+  if (urlPath === '/payment' && req.method === 'POST') {
     // VERIFICACIÓN DE SEGURIDAD
     const secret = req.headers['x-internal-secret'];
     if (secret !== (process.env.INTERNAL_SECRET || 'dev-secret')) {
@@ -477,7 +477,6 @@ wss.on('connection', ws => {
     if (msg.type==='join') {
       const wallet = msg.wallet||'';
       
-      // EVITAR PESTAÑAS DUPLICADAS
       for (const [oldId, p] of lobby) {
         if (p.wallet === wallet && oldId !== id) {
           send(p.ws, { type:'kicked', msg:'Tu wallet se conectó en otra pestaña. Esta sesión se cerrará.' });
@@ -581,6 +580,13 @@ wss.on('connection', ws => {
             send(ws,{type:'cashout_result',ok:false,reason:'Error al enviar USDC: '+e.message});
           });
       }).catch(e => send(ws,{type:'cashout_result',ok:false,reason:'No se pudo verificar balance'}));
+    }
+
+    if (msg.type==='chat_message') {
+      const p = lobby.get(id);
+      if (!p) return;
+      const text = (msg.text || '').slice(0, 200); 
+      broadcast({ type:'chat_message', name: p.name, text: text });
     }
 
     if (msg.type==='ping') {
