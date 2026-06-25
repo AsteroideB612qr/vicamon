@@ -113,7 +113,10 @@ async function checkPayments() {
         try {
           const res = await fetch(GAME_SERVER_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'X-Internal-Secret': process.env.INTERNAL_SECRET || 'dev-secret'
+            },
             body: JSON.stringify({
               wallet:    sender,
               amount,
