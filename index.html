@@ -1060,6 +1060,13 @@ function handleChatMessage(m){
   msgDiv.innerHTML = `<span class="chat-name">${escapeHtml(m.name)}:</span> <span style="color:rgba(255,255,255,.8)">${escapeHtml(m.text)}</span>`;
   
   chatBox.appendChild(msgDiv);
+  
+  // LÍMITE DE MEMORIA: Mantener solo los últimos 50 mensajes en pantalla
+  while(chatBox.children.length > 50) {
+    chatBox.removeChild(chatBox.firstChild);
+  }
+
+  // Auto-scroll hacia abajo
   chatBox.scrollTop = chatBox.scrollHeight;
 }
 
