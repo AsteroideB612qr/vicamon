@@ -9,7 +9,7 @@ const {
   getAllPlayersDebug
 } = require('./hp-balance');
 const { sendUSDC } = require('./transfer');
-const BEASTS = require('./beasts.js'); // NUEVO: Cargar Vicamons desde archivo externo
+const BEASTS = require('./beasts.js');
 const BEAST_KEYS = Object.keys(BEASTS);
 
 async function getPlatformUSDCBalance() {
@@ -143,7 +143,19 @@ function newState() {
   return { hp:100, maxHp:100, poisonDmg:0, poisonTurns:0, burnDmg:0, burnTurns:0,
     shield:0, shieldReflect:0, reflect50:0, stun:false, recharge:0,
     regen:0, regenTurns:0, blind:0, weakAtk:0, weaken:0,
-    corrode:0, analyzed:0, lastDmgReceived:0 };
+    corrode:0, analyzed:0, lastDmgReceived:0, pp:[] };
+}
+
+// NUEVO: Inicializar los PP de un Vicamon al empezar la batalla
+function getStartState(beastKey) {
+  const st = newState();
+  const beast = BEASTS[beastKey];
+  if (beast) {
+    st.pp = beast.attacks.map(a => a.pp === undefined ? 99 : a.pp);
+  } else {
+    st.pp = [99, 99, 99, 99];
+  }
+  return st;
 }
 
 function applyAtk(aSt, dSt, atk, aName) {
@@ -331,6 +343,19 @@ async function processTurn(bId, attackerId, atkIndex) {
     const atks=BEASTS[aPlayer.beast]?.attacks;
     const atk=atks?.[atkIndex];
     if (!atk) return false;
+
+    // NUEVO: Verificar PP
+    if (aSt.pp[atkIndex] <= 0) {
+      b.logs.push({t:`${aPlayer.name} intentó usar ${atk.n} pero no tiene PP. ¡Turno perdido!`,c:'bad'});
+      b.turnId = isP1 ? b.p2id : b.p1id; // Pasar turno
+      pushBattle(bId);
+      autoResolveIfBlocked(bId);
+      return false;
+    }
+    
+    // Descontar PP
+    if (aSt.pp[atkIndex] < 99) aSt.pp[atkIndex]--;
+
     b.logs.push(...applyAtk(aSt,dSt,atk,aPlayer.name));
     if (await checkDeath(bId, isP1)) return true;
   }
@@ -357,19 +382,32 @@ const CPU_NAME='Zodiac Master', CPU_ID=-1;
 
 function cpuPickAttack(cpuSt, oppSt, beastKey) {
   const atks=BEASTS[beastKey]?.attacks||[];
-  const w=atks.map(a=>{
-    let s=2;
-    if (a.d>30 && oppSt.hp<40) s=5;
-    if ((a.fx==='poison5'||a.fx==='poison3l') && oppSt.poisonTurns===0 && oppSt.hp>40) s=4;
-    if ((a.fx==='heal20'||a.fx==='heal30'||a.fx==='fortress') && cpuSt.hp<35) s=5;
-    if ((a.fx==='shield2'||a.fx==='shield1r') && cpuSt.hp<45 && cpuSt.shield===0) s=4;
-    if (a.fx==='poisonDouble' && oppSt.poisonTurns>0) s=6;
-    if (a.fx==='recharge' && cpuSt.recharge===0 && oppSt.hp>60) s=1;
-    return s;
+  const validIndices=[];
+  const weights=[];
+
+  atks.forEach((a, i) => {
+    // NUEVO: Ignorar ataques sin PP
+    if (cpuSt.pp[i] > 0 || cpuSt.pp[i] === undefined || cpuSt.pp[i] === 99) {
+      validIndices.push(i);
+      let s=2;
+      if (a.d>30 && oppSt.hp<40) s=5;
+      if ((a.fx==='poison5'||a.fx==='poison3l') && oppSt.poisonTurns===0 && oppSt.hp>40) s=4;
+      if ((a.fx==='heal20'||a.fx==='heal30'||a.fx==='fortress') && cpuSt.hp<35) s=5;
+      if ((a.fx==='shield2'||a.fx==='shield1r') && cpuSt.hp<45 && cpuSt.shield===0) s=4;
+      if (a.fx==='poisonDouble' && oppSt.poisonTurns>0) s=6;
+      if (a.fx==='recharge' && cpuSt.recharge===0 && oppSt.hp>60) s=1;
+      weights.push(s);
+    }
   });
-  const tot=w.reduce((a,b)=>a+b,0);
-  let r=Math.random()*tot, idx=0;
-  for (let i=0;i<w.length;i++){r-=w[i];if(r<=0){idx=i;break;}}
+
+  if(validIndices.length===0) return 0; // Fallback
+
+  const tot=weights.reduce((a,b)=>a+b,0);
+  let r=Math.random()*tot, idx=validIndices[0];
+  for (let i=0;i<validIndices.length;i++){
+    r-=weights[i];
+    if(r<=0){ idx=validIndices[i]; break; }
+  }
   return idx;
 }
 
@@ -415,6 +453,10 @@ async function doCpuTurn(bId) {
   else {
     const idx=cpuPickAttack(cpuSt, plSt, b.cpuBeast);
     const atk=BEASTS[b.cpuBeast].attacks[idx];
+    
+    // NUEVO: Descontar PP de la CPU
+    if (cpuSt.pp[idx] < 99) cpuSt.pp[idx]--;
+    
     b.logs.push(...applyAtk(cpuSt, plSt, atk, CPU_NAME));
     if (await checkCpuDeath(bId)) return;
   }
@@ -444,6 +486,19 @@ async function processCpuPlayerTurn(bId, playerId, atkIndex) {
   else if (atkIndex >= 0) {
     const atks=BEASTS[pl.beast]?.attacks;
     const atk=atks?.[atkIndex]; if (!atk) return;
+
+    // NUEVO: Verificar PP del jugador
+    if (plSt.pp[atkIndex] <= 0) {
+      b.logs.push({t:`${pl.name} intentó usar ${atk.n} pero no tiene PP. ¡Turno perdido!`,c:'bad'});
+      b.turnId=CPU_ID; // Pasar turno
+      pushCpuBattle(bId);
+      scheduleCpuTurn(bId);
+      return;
+    }
+
+    // Descontar PP
+    if (plSt.pp[atkIndex] < 99) plSt.pp[atkIndex]--;
+
     b.logs.push(...applyAtk(plSt,cpuSt,atk,pl.name));
     if (await checkCpuDeath(bId)) return;
   }
@@ -506,7 +561,8 @@ wss.on('connection', ws => {
       if (msg.isTraining) {
         p1.inBattle=true; p2.inBattle=true;
         const bId=`btrain${uid()}`;
-        battles.set(bId,{p1id:msg.fromId,p2id:id,st1:newState(),st2:newState(),turnId:msg.fromId,logs:[{t:`¡Entrenamiento amistoso! ${p1.name} vs ${p2.name}`,c:'hi'}],isTraining:true});
+        // NUEVO: getStartState
+        battles.set(bId,{p1id:msg.fromId,p2id:id,st1:getStartState(p1.beast),st2:getStartState(p2.beast),turnId:msg.fromId,logs:[{t:`¡Entrenamiento amistoso! ${p1.name} vs ${p2.name}`,c:'hi'}],isTraining:true});
         send(p1.ws,{type:'battle_start',battleId:bId,role:'p1',opponent:p2.name,opponentBeast:p2.beast,isTraining:true});
         send(p2.ws,{type:'battle_start',battleId:bId,role:'p2',opponent:p1.name,opponentBeast:p1.beast,isTraining:true});
         await pushLobby();
@@ -518,7 +574,8 @@ wss.on('connection', ws => {
         await lockHP(p1.wallet,100); await lockHP(p2.wallet,100);
         p1.inBattle=true; p2.inBattle=true;
         const bId=`b${uid()}`;
-        battles.set(bId,{p1id:msg.fromId,p2id:id,st1:newState(),st2:newState(),turnId:msg.fromId,logs:[],isCpu:false});
+        // NUEVO: getStartState
+        battles.set(bId,{p1id:msg.fromId,p2id:id,st1:getStartState(p1.beast),st2:getStartState(p2.beast),turnId:msg.fromId,logs:[],isCpu:false});
         battles.get(bId).logs.push({t:`¡Combate! ${p1.name} vs ${p2.name}`,c:'hi'});
         send(p1.ws,{type:'battle_start',battleId:bId,role:'p1',opponent:p2.name,opponentBeast:p2.beast});
         send(p2.ws,{type:'battle_start',battleId:bId,role:'p2',opponent:p1.name,opponentBeast:p1.beast});
@@ -539,7 +596,8 @@ wss.on('connection', ws => {
       pl.inBattle=true;
       const cpuBeast=BEAST_KEYS[Math.floor(Math.random()*BEAST_KEYS.length)];
       const bId=`bcpu${uid()}`;
-      battles.set(bId,{p1id:CPU_ID,p2id:id,st1:newState(),st2:newState(),turnId:CPU_ID,logs:[{t:`¡Zodiac Master invoca ${cpuBeast}! ¡Entrenamiento gratuito!`,c:'hi'}],isCpu:true,cpuIsP1:true,cpuBeast});
+      // NUEVO: getStartState
+      battles.set(bId,{p1id:CPU_ID,p2id:id,st1:getStartState(cpuBeast),st2:getStartState(pl.beast),turnId:CPU_ID,logs:[{t:`¡Zodiac Master invoca ${cpuBeast}! ¡Entrenamiento gratuito!`,c:'hi'}],isCpu:true,cpuIsP1:true,cpuBeast});
       send(ws,{type:'battle_start',battleId:bId,role:'p2',opponent:CPU_NAME,opponentBeast:cpuBeast,isCpu:true});
       await pushLobby();
       setTimeout(()=>{ pushCpuBattle(bId); scheduleCpuTurn(bId); },200);
