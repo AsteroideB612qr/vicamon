@@ -22,20 +22,17 @@ pool.query(`
 
 pool.query(`INSERT INTO platform (id, hp) VALUES (1, 0) ON CONFLICT DO NOTHING;`).catch(e=>{});
 
-// Agregar columnas de estadísticas si no existen
 pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS wins INTEGER DEFAULT 0;`).catch(e=>{});
 pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS losses INTEGER DEFAULT 0;`).catch(e=>{});
 pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS last_name VARCHAR(20);`).catch(e=>{});
 
 const USDC_PER_HP = 0.001;
 
-// Función para ver la base de datos (secreta)
 async function getAllPlayersDebug() {
   const res = await pool.query('SELECT wallet, hp, locked_hp, wins, losses, last_name FROM players');
   return res.rows;
 }
 
-// Guardar el nickname cuando el jugador entra al lobby
 async function updatePlayerName(wallet, name) {
   await pool.query(`
     INSERT INTO players (wallet, last_name) VALUES ($1, $2)
@@ -43,16 +40,30 @@ async function updatePlayerName(wallet, name) {
   `, [wallet, name]);
 }
 
-// Sumar victorias y derrotas
 async function updatePlayerStats(winnerWallet, loserWallet) {
   await pool.query('UPDATE players SET wins = wins + 1 WHERE wallet = $1', [winnerWallet]);
   await pool.query('UPDATE players SET losses = losses + 1 WHERE wallet = $1', [loserWallet]);
 }
 
-// Obtener el Top 3 jugadores
 async function getTopPlayers(limit = 3) {
   const res = await pool.query('SELECT last_name, wins, losses FROM players WHERE wins > 0 ORDER BY wins DESC, losses ASC LIMIT $1', [limit]);
   return res.rows;
+}
+
+// NUEVO: Obtener victorias y derrotas de un jugador
+async function getPlayerStats(wallet) {
+  const res = await pool.query('SELECT wins, losses FROM players WHERE wallet = $1', [wallet]);
+  if (res.rows.length > 0) return res.rows[0];
+  return { wins: 0, losses: 0 };
+}
+
+// NUEVO: Calcular el puesto global del jugador
+async function getPlayerRank(wallet) {
+  const pRes = await pool.query('SELECT wins, losses FROM players WHERE wallet = $1', [wallet]);
+  if (pRes.rows.length === 0 || pRes.rows[0].wins === 0) return null; // No rankeado si tiene 0 victorias
+  const { wins, losses } = pRes.rows[0];
+  const rRes = await pool.query('SELECT COUNT(*) + 1 as rank FROM players WHERE wins > $1 OR (wins = $1 AND losses < $2)', [wins, losses]);
+  return parseInt(rRes.rows[0].rank, 10);
 }
 
 async function getHP(wallet) {
@@ -166,5 +177,6 @@ module.exports = {
   PLATFORM_THRESHOLD: 1.00, 
   USDC_PER_HP,
   getAllPlayersDebug,
-  updatePlayerName, updatePlayerStats, getTopPlayers
+  updatePlayerName, updatePlayerStats, getTopPlayers,
+  getPlayerStats, getPlayerRank // NUEVO
 };
