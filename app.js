@@ -4,6 +4,7 @@ const STCSS={agresivo:'background:rgba(216,90,48,.2);color:#F0997B',defensivo:'b
 let ws=null, myId=null, myName='', myBeast='', myRole='', oppName='', oppBeast='', battleId='';
 let mySt={}, oppSt={}, pendingFrom=null, pendingIsTraining=false;
 let reconnectTimer=null, myWallet='', myCurrentHP=0, isKicked=false;
+let myStats = { wins: 0, losses: 0, rank: null }; // NUEVO
 
 // ── GESTOR DE AUDIO ──
 const audioFiles = {
@@ -42,9 +43,25 @@ function toggleMute() {
         btn.textContent = '🔊';
     }
 }
-// Sonido global para todos los botones
 document.addEventListener('click', (e) => { if(e.target.closest('.btn')) playSfx('boton'); });
 // ── FIN GESTOR DE AUDIO ──
+
+// NUEVO: Desconectar Wallet
+async function disconnectWallet() {
+  try {
+    const phantom = getPhantom();
+    if (phantom && phantom.isConnected) await phantom.disconnect();
+  } catch(e) {}
+  myWallet = '';
+  myName = '';
+  myBeast = '';
+  if(ws) { try { ws.close(); } catch(e){} }
+  document.getElementById('btn-phantom').style.display='flex';
+  document.getElementById('wallet-connected').style.display='none';
+  document.getElementById('no-phantom').style.display='none';
+  document.getElementById('inp-name').value = '';
+  show('s-login');
+}
 
 function copyWallet() {
   navigator.clipboard.writeText('C7pezdMQV5SnXWuzpt9YHnW1JrAAjvjdybNqoE8uZFTb')
@@ -139,13 +156,33 @@ async function checkHPNow(fromConnect=false) {
     }
   } catch(e) { document.getElementById('wallet-hp').textContent = 'Error al verificar'; }
 }
+
+// NUEVO: Actualizar la interfaz del perfil
+function updateProfileUI(stats) {
+  if (stats) myStats = stats;
+  const nameEl = document.getElementById('profile-name');
+  if (nameEl) {
+    nameEl.textContent = myName || 'Jugador';
+    document.getElementById('profile-wallet').textContent = myWallet ? myWallet.slice(0,8)+'...'+myWallet.slice(-6) : 'Desconectado';
+    document.getElementById('profile-wins').textContent = myStats.wins || 0;
+    document.getElementById('profile-losses').textContent = myStats.losses || 0;
+    document.getElementById('profile-rank').textContent = myStats.rank ? '#' + myStats.rank : 'Sin clasificar';
+  }
+}
+
 function show(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
-  // NUEVO: Cambiar música al cambiar de pantalla
-  if(id === 's-login' || id === 's-pick' || id === 's-lobby') playMusic('lobby');
+  if(id === 's-login' || id === 's-pick' || id === 's-lobby' || id === 's-profile') playMusic('lobby');
   if(id === 's-battle' || id === 's-result') playMusic('batalla');
 }
+
+// NUEVO: Mostrar pantalla de elección
+function showPickGrid() {
+  buildPickGrid();
+  show('s-pick');
+}
+
 function hpColor(pct){return pct>50?'#5DCAA5':pct>25?'#EF9F27':'#F0997B';}
 function stTags(st,right=false){
   let t='';
@@ -273,8 +310,8 @@ function goPickBeast(){
   if(!myWallet){alert('Primero conecta tu wallet Phantom');return;}
   myName=document.getElementById('inp-name').value.trim();
   if(!myName){alert('Escribe tu nombre de combate');return;}
-  buildPickGrid();
-  show('s-pick');
+  updateProfileUI();
+  show('s-profile');
   updateHPDisplay(myCurrentHP);
   checkHPNow(false);
 }
@@ -293,7 +330,14 @@ function connectWS(){
   };
 }
 function handleMsg(m){
-  if(m.type==='joined'){ myId=m.id; if(m.hp !== undefined) updateHPDisplay(m.hp); updateLobbyBadge(); if(!isKicked) show('s-lobby'); checkHPNow(false); }
+  if(m.type==='joined'){ 
+    myId=m.id; 
+    if(m.hp !== undefined) updateHPDisplay(m.hp); 
+    updateLobbyBadge(); 
+    updateProfileUI(m.stats); // NUEVO
+    if(!isKicked) show('s-profile'); // NUEVO: Al conectar va al perfil
+    checkHPNow(false); 
+  }
   if(m.type==='kicked'){ isKicked=true; alert(m.msg); show('s-login'); if(ws) ws.close(); }
   if(m.type==='lobby'){ const others=m.players.filter(p=>p.id!==myId); document.getElementById('lbl-online').textContent=m.players.length; renderLobby(others); }
   if(m.type==='leaderboard_update'){ renderLeaderboard(m.top); }
@@ -339,6 +383,10 @@ function handleMsg(m){
   if(m.type==='battle_end'){
     const won=m.won; const isCpuResult=m.isCpu||window._isCpuBattle||oppName==='Zodiac Master'; const isTrainingResult=m.isTraining||window._isTrainingBattle;
     const winnerHp=m.winnerHp||0; const newHp=m.newHp||0;
+    
+    // NUEVO: Actualizar perfil tras la batalla
+    if(m.stats) updateProfileUI(m.stats);
+    
     show('s-result');
     if(!isCpuResult && !isTrainingResult) updateHPDisplay(newHp);
     const b1=BEASTS[myBeast],b2=BEASTS[oppBeast];
@@ -360,7 +408,7 @@ function animHit(side, dmg){
   const spr=document.getElementById('spr-'+side); if(!spr) return;
   spr.classList.remove('anim-hit','anim-attack'); void spr.offsetWidth; spr.classList.add('anim-hit');
   const wrap=spr.closest('.f-sprite-wrap'); const fl=document.createElement('div'); fl.className='dmg-float'; fl.textContent='-'+dmg; fl.style.color=side==='me'?'#F0997B':'#F0997B'; wrap.appendChild(fl);
-  playSfx('ataque'); // NUEVO: Sonido de golpe al recibir daño
+  playSfx('ataque');
   setTimeout(()=>{spr.classList.remove('anim-hit');fl.remove();},800);
 }
 function animAttack(side){
@@ -397,12 +445,18 @@ function updateHPDisplay(hp){
   const el=document.getElementById('pick-hp-val'); if(el){ el.textContent=hp+' HP'; el.style.color=hp>=100?'#5DCAA5':'#EF9F27'; }
   const elUsdc=document.getElementById('pick-usdc-val'); if(elUsdc) elUsdc.textContent='= '+(hp*0.001).toFixed(3)+' USDC';
   const loginHp=document.getElementById('wallet-hp'); if(loginHp){ loginHp.textContent=hp+' HP'; loginHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; }
+  
+  // NUEVO: Actualizar HP en el perfil
+  const profHp=document.getElementById('profile-hp'); if(profHp){ profHp.textContent=hp+' HP'; profHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; }
+  const profUsdc=document.getElementById('profile-usdc'); if(profUsdc) profUsdc.textContent='= '+(hp*0.001).toFixed(3)+' USDC';
+  
   const btn=document.getElementById('btn-cashout'); if(btn){ btn.style.display=hp>0?'inline-block':'none'; btn.disabled=false; btn.textContent='💰 Cashout'; }
   const warn=document.getElementById('low-hp-warning'); if(warn) warn.style.display=hp<100?'block':'none';
   const charge=document.getElementById('step-charge'); if(charge) charge.style.display = hp<100 ? 'block' : 'none';
   const depHtml = hp<100 ? depositWidgetHTML() : '';
   const pickDep = document.getElementById('pick-deposit-widget'); if(pickDep) pickDep.innerHTML = depHtml;
   const lobbyDep = document.getElementById('lobby-deposit-widget'); if(lobbyDep) lobbyDep.innerHTML = depHtml;
+  const profDep = document.getElementById('profile-deposit-widget'); if(profDep) profDep.innerHTML = depHtml;
   if(document.getElementById('s-lobby')?.classList.contains('active')){ const cur = document.getElementById('players-list'); if(cur) renderLobbyFromCache(); }
 }
 function sendChallenge(targetId,name){ if(confirm(`¿Retar a ${name} a combate por HP?`)) ws.send(JSON.stringify({type:'challenge',targetId})); }
@@ -515,6 +569,6 @@ function goChangeBeast(){
   };
   show('s-pick');
 }
-function leaveLobby(){ if(ws) ws.send(JSON.stringify({type:'leave_lobby'})); show('s-login'); }
+function leaveLobby(){ if(ws) ws.send(JSON.stringify({type:'leave_lobby'})); show('s-profile'); }
 function backToLobby(){ updateLobbyBadge(); show('s-lobby'); }
 document.getElementById('inp-name').addEventListener('keydown',e=>{if(e.key==='Enter')goPickBeast();});
