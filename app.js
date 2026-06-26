@@ -488,7 +488,7 @@ function sendChallenge(targetId,name){ if(confirm(`¿Retar a ${name} a combate p
 function sendChallengeTraining(targetId,name){ if(confirm(`¿Retar a ${name} a un ENTRENAMIENTO? (Sin apostar HP)`)) ws.send(JSON.stringify({type:'challenge_training',targetId})); }
 function challengeMaster(){ ws.send(JSON.stringify({type:'challenge_cpu'})); }
 function acceptChallenge(){
-  document.getElementById('modal-challenged').classList.remove('hidden');
+  document.getElementById('modal-challenged').classList.add('hidden'); // CORREGIDO: Ahora se oculta al aceptar
   if(pendingFrom!==null) ws.send(JSON.stringify({type:'accept',fromId:pendingFrom, isTraining: pendingIsTraining}));
   pendingIsTraining=false; pendingFrom=null;
 }
