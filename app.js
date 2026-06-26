@@ -594,6 +594,12 @@ function goChangeBeast(){
   };
   show('s-pick');
 }
-function leaveLobby(){ if(ws) ws.send(JSON.stringify({type:'leave_lobby'})); show('s-profile'); }
+function leaveLobby(){ 
+  if(ws) ws.send(JSON.stringify({type:'leave_lobby'}));
+  isKicked = true; // Evita que el juego intente reconectar automáticamente
+  if(ws) { try { ws.close(); } catch(e){} }
+  ws = null; // Borramos la conexión vieja
+  show('s-profile'); 
+}
 function backToLobby(){ updateLobbyBadge(); show('s-lobby'); }
 document.getElementById('inp-name').addEventListener('keydown',e=>{if(e.key==='Enter')goPickBeast();});
