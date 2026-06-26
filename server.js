@@ -6,7 +6,8 @@ const {
   getHP, addHP, hasHP, lockHP, unlockHP, settleMatch, cashout,
   getPlatformHp, getPlatformUsdc, clearPlatformHp,
   PLATFORM_WALLET, PLATFORM_THRESHOLD, USDC_PER_HP,
-  getAllPlayersDebug, updatePlayerName, updatePlayerStats, getTopPlayers
+  getAllPlayersDebug, updatePlayerName, updatePlayerStats, getTopPlayers,
+  getPlayerStats, getPlayerRank // NUEVO
 } = require('./hp-balance');
 const { sendUSDC } = require('./transfer');
 const BEASTS = require('./beasts.js');
@@ -294,17 +295,20 @@ async function endBattle(bId, winnerId, loserId, winnerHp, forfeit=false) {
     const winnerWallet = winner?.wallet || '';
     const loserWallet  = loser?.wallet  || '';
     const result = await settleMatch(winnerWallet, loserWallet, hp);
-    
-    // NUEVO: Actualizar estadísticas de victorias/derrotas
     await updatePlayerStats(winnerWallet, loserWallet);
+    
+    // NUEVO: Obtener stats actualizadas para enviarlas al perfil de cada jugador
+    const wStats = await getPlayerStats(winnerWallet);
+    const lStats = await getPlayerStats(loserWallet);
+    const wRank = await getPlayerRank(winnerWallet);
+    const lRank = await getPlayerRank(loserWallet);
     
     const winnerUsdc  = parseFloat(((100 + hp) * USDC_PER_HP).toFixed(3));
     const platformUsdc= parseFloat(((100 - hp) * USDC_PER_HP).toFixed(3));
-    send(winner?.ws, { type:'battle_end', won:true, isCpu:false, winnerHp:hp, winnerUsdc, platformUsdc, newHp: result.winnerNewHp, forfeit });
-    send(loser?.ws, { type:'battle_end', won:false, isCpu:false, winnerHp:hp, winnerUsdc, platformUsdc, newHp: await getHP(loserWallet) });
+    send(winner?.ws, { type:'battle_end', won:true, isCpu:false, winnerHp:hp, winnerUsdc, platformUsdc, newHp: result.winnerNewHp, forfeit, stats: { wins: wStats.wins, losses: wStats.losses, rank: wRank } });
+    send(loser?.ws, { type:'battle_end', won:false, isCpu:false, winnerHp:hp, winnerUsdc, platformUsdc, newHp: await getHP(loserWallet), stats: { wins: lStats.wins, losses: lStats.losses, rank: lRank } });
     checkPlatformTransfer();
     
-    // NUEVO: Avisar a todos en el lobby que el ranking actualizó
     const top = await getTopPlayers(3);
     broadcast({ type: 'leaderboard_update', top });
   }
@@ -527,14 +531,15 @@ wss.on('connection', ws => {
       }
 
       lobby.set(id,{ws,name:msg.name,beast:msg.beast,wallet,inBattle:false,id});
-      
-      // NUEVO: Guardar el nombre del jugador en la DB
       await updatePlayerName(wallet, msg.name);
       
       const hp = await getHP(wallet);
-      send(ws,{type:'joined',id,hp});
       
-      // NUEVO: Enviar el ranking actual al jugador que entra
+      // NUEVO: Obtener stats y ranking para el perfil
+      const stats = await getPlayerStats(wallet);
+      const rank = await getPlayerRank(wallet);
+      send(ws,{type:'joined', id, hp, stats: { wins: stats.wins, losses: stats.losses, rank }});
+      
       const top = await getTopPlayers(3);
       send(ws, { type: 'leaderboard_update', top });
       
