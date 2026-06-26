@@ -179,6 +179,13 @@ function show(id){
 
 function showPickGrid() {
   buildPickGrid();
+  // NUEVO: Si ya tenemos un vicamon seleccionado, marcarlo y habilitar el botón
+  if(myBeast) {
+    document.getElementById('bc-'+myBeast)?.classList.add('sel');
+    document.getElementById('btn-enter').disabled = false;
+  } else {
+    document.getElementById('btn-enter').disabled = true;
+  }
   show('s-pick');
 }
 
