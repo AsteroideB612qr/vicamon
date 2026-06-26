@@ -7,9 +7,10 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
 <!-- BOTÓN DE MUTE -->
 <button id="btn-mute" onclick="toggleMute()" style="position:fixed;top:15px;right:15px;background:rgba(255,255,255,.07);border:0.5px solid rgba(255,255,255,.18);border-radius:99px;width:40px;height:40px;cursor:pointer;color:#fff;font-size:18px;z-index:9999;backdrop-filter:blur(4px)">🔊</button>
-  
+
 <!-- LOGIN -->
 <div id="s-login" class="screen active">
   <div class="login-logo" style="padding:0;background:none;-webkit-text-fill-color:initial"><img src="vicamon-logo.png" alt="VICAMON" style="max-width:280px;width:90%"></div>
@@ -33,7 +34,7 @@
     <div id="step-name" style="opacity:.4;pointer-events:none">
       <div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em">Paso 2 — Tu nombre de combate</div>
       <input id="inp-name" placeholder="Nickname" maxlength="20" autocomplete="off" style="width:100%;background:rgba(255,255,255,.07);border:0.5px solid rgba(255,255,255,.15);border-radius:8px;padding:11px 14px;color:#fff;font-size:15px;outline:none;margin-bottom:12px">
-      <button class="btn btn-blue" id="btn-continue" style="width:100%;padding:11px" onclick="goPickBeast()">Elegir Vicamon →</button>
+      <button class="btn btn-blue" id="btn-continue" style="width:100%;padding:11px" onclick="goPickBeast()">Continuar →</button>
     </div>
     <div id="step-charge" style="display:none;margin-top:14px;background:rgba(74,158,255,.06);border:0.5px solid rgba(74,158,255,.2);border-radius:10px;padding:12px">
       <div style="font-size:11px;color:#85B7EB;margin-bottom:5px">💡 Deposita USDC para retar jugadores reales</div>
@@ -47,11 +48,52 @@
   </div>
 </div>
 
+<!-- PROFILE (NUEVO) -->
+<div id="s-profile" class="screen">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+    <h1 style="margin:0">Perfil del Entrenador</h1>
+    <button class="btn btn-sm btn-red" onclick="disconnectWallet()">🚪 Desconectar Wallet</button>
+  </div>
+  
+  <div style="background:rgba(255,255,255,.04);border:0.5px solid rgba(255,255,255,.1);border-radius:12px;padding:16px;margin-bottom:16px">
+    <div style="font-size:22px;font-weight:700;color:#fff;margin-bottom:4px" id="profile-name">Cargando...</div>
+    <div style="background:rgba(0,0,0,.3);padding:8px 10px;border-radius:6px;margin-bottom:12px">
+      <div style="font-size:10px;color:rgba(255,255,255,.3)">Tu Wallet</div>
+      <div style="font-size:11px;color:rgba(255,255,255,.6);font-family:monospace" id="profile-wallet">Conectando...</div>
+    </div>
+    
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px">
+      <div style="background:rgba(0,0,0,.3);padding:10px;border-radius:8px;text-align:center">
+        <div style="font-size:11px;color:rgba(255,255,255,.4)">HP Disponibles</div>
+        <div style="font-size:18px;font-weight:700;color:#5DCAA5" id="profile-hp">0 HP</div>
+        <div style="font-size:10px;color:rgba(255,255,255,.3)" id="profile-usdc">0.000 USDC</div>
+      </div>
+      <div style="background:rgba(0,0,0,.3);padding:10px;border-radius:8px;text-align:center">
+        <div style="font-size:11px;color:rgba(255,255,255,.4)">Victorias / Derrotas</div>
+        <div style="font-size:18px;font-weight:700;color:#fff"><span id="profile-wins" style="color:#5DCAA5">0</span> / <span id="profile-losses" style="color:#F0997B">0</span></div>
+      </div>
+      <div style="background:rgba(0,0,0,.3);padding:10px;border-radius:8px;text-align:center">
+        <div style="font-size:11px;color:rgba(255,255,255,.4)">Puesto en Ranking</div>
+        <div style="font-size:18px;font-weight:700;color:#CFA9EC" id="profile-rank">Sin clasificar</div>
+      </div>
+    </div>
+    
+    <div style="background:rgba(130,80,180,.1);border:0.5px solid rgba(130,80,180,.3);border-radius:8px;padding:10px;text-align:center">
+      <div style="font-size:11px;color:rgba(255,255,255,.4)">Rango</div>
+      <div style="font-size:14px;font-weight:600;color:#CFA9EC">🔒 Próximamente</div>
+    </div>
+  </div>
+
+  <div id="profile-deposit-widget" style="margin-bottom:16px"></div>
+  <button class="btn btn-blue" style="width:100%" onclick="showPickGrid()">🐾 Elegir Vicamon →</button>
+</div>
+
 <!-- PICK BEAST -->
 <div id="s-pick" class="screen">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px">
     <h1 style="margin:0">Elige tu Vicamon</h1>
     <div style="display:flex;align-items:center;gap:10px">
+      <button class="btn btn-sm" onclick="show('s-profile')">⬅ Mi Perfil</button>
       <div style="background:rgba(255,255,255,.06);border:0.5px solid rgba(255,255,255,.12);border-radius:8px;padding:6px 12px;font-size:12px">
         <span style="color:rgba(255,255,255,.4)">HP: </span>
         <span id="pick-hp-val" style="font-weight:600;color:#5DCAA5">—</span>
@@ -106,8 +148,9 @@
   </div>
   <div class="lobby-list" id="players-list"></div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-    <button class="btn btn-sm" onclick="goChangeBeast()">Cambiar Vicamon</button>
-    <button class="btn btn-sm btn-red" onclick="leaveLobby()">Salir</button>
+    <button class="btn btn-sm" onclick="show('s-profile')">👤 Mi Perfil</button>
+    <button class="btn btn-sm" onclick="goChangeBeast()">🔄 Cambiar Vicamon</button>
+    <button class="btn btn-sm btn-red" onclick="leaveLobby()">🚪 Salir</button>
   </div>
   <div class="chat-wrap">
     <h2 style="margin:0 0 10px 0;font-size:16px">Chat del Lobby</h2>
