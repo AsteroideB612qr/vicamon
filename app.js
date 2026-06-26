@@ -4,7 +4,7 @@ const STCSS={agresivo:'background:rgba(216,90,48,.2);color:#F0997B',defensivo:'b
 let ws=null, myId=null, myName='', myBeast='', myRole='', oppName='', oppBeast='', battleId='';
 let mySt={}, oppSt={}, pendingFrom=null, pendingIsTraining=false;
 let reconnectTimer=null, myWallet='', myCurrentHP=0, isKicked=false;
-let myStats = { wins: 0, losses: 0, rank: null }; // NUEVO
+let myStats = { wins: 0, losses: 0, rank: null };
 
 // ── GESTOR DE AUDIO ──
 const audioFiles = {
@@ -46,7 +46,7 @@ function toggleMute() {
 document.addEventListener('click', (e) => { if(e.target.closest('.btn')) playSfx('boton'); });
 // ── FIN GESTOR DE AUDIO ──
 
-// NUEVO: Desconectar Wallet
+// Desconectar Wallet
 async function disconnectWallet() {
   try {
     const phantom = getPhantom();
@@ -157,7 +157,7 @@ async function checkHPNow(fromConnect=false) {
   } catch(e) { document.getElementById('wallet-hp').textContent = 'Error al verificar'; }
 }
 
-// NUEVO: Actualizar la interfaz del perfil
+// Actualizar la interfaz del perfil
 function updateProfileUI(stats) {
   if (stats) myStats = stats;
   const nameEl = document.getElementById('profile-name');
@@ -177,7 +177,6 @@ function show(id){
   if(id === 's-battle' || id === 's-result') playMusic('batalla');
 }
 
-// NUEVO: Mostrar pantalla de elección
 function showPickGrid() {
   buildPickGrid();
   show('s-pick');
@@ -315,27 +314,48 @@ function goPickBeast(){
   updateHPDisplay(myCurrentHP);
   checkHPNow(false);
 }
-function enterLobby(){ if(!myBeast) return; connectWS(); }
+
+// CORREGIDO: Evitar reconexión si ya estamos conectados
+function enterLobby(){ 
+  if(!myBeast) return; 
+  if(ws && ws.readyState === 1) {
+    show('s-lobby'); 
+    ws.send(JSON.stringify({type:'ping'})); 
+  } else {
+    connectWS(); 
+  }
+}
+
+// CORREGIDO: Blindar la reconexión
 function connectWS(){
-  if(ws){try{ws.close();}catch{}}
+  clearTimeout(reconnectTimer);
   isKicked=false;
   const proto=location.protocol==='https:'?'wss':'ws';
-  ws=new WebSocket(`${proto}://${location.host}`);
-  ws.onopen=()=>{ clearTimeout(reconnectTimer); ws.send(JSON.stringify({type:'join',name:myName,beast:myBeast,wallet:myWallet})); };
-  ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data));}catch(err){console.error(err);}};
-  ws.onerror=()=>{};
-  ws.onclose=()=>{
+  const localWs = new WebSocket(`${proto}://${location.host}`);
+  
+  localWs.onopen=()=>{ 
+    clearTimeout(reconnectTimer);
+    localWs.send(JSON.stringify({type:'join',name:myName,beast:myBeast,wallet:myWallet})); 
+  };
+  localWs.onmessage=e=>{try{handleMsg(JSON.parse(e.data));}catch(err){console.error(err);}};
+  localWs.onerror=()=>{};
+  
+  localWs.onclose=()=>{
+    if(ws !== localWs) return; // Si esta conexión ya fue reemplazada, ignorarla
     const inBattle=document.getElementById('s-battle').classList.contains('active');
     if(!inBattle && !isKicked) reconnectTimer=setTimeout(()=>{ if(myName&&myBeast) connectWS(); },2000);
   };
+  
+  ws = localWs;
 }
+
 function handleMsg(m){
-    if(m.type==='joined'){ 
+  if(m.type==='joined'){ 
     myId=m.id; 
     if(m.hp !== undefined) updateHPDisplay(m.hp); 
     updateLobbyBadge(); 
-    updateProfileUI(m.stats); // NUEVO
-    if(!isKicked) show('s-lobby'); // CORREGIDO: Al conectar va al lobby
+    updateProfileUI(m.stats);
+    if(!isKicked) show('s-lobby'); // CORREGIDO: Va al lobby al conectar
     checkHPNow(false); 
   }
   if(m.type==='kicked'){ isKicked=true; alert(m.msg); show('s-login'); if(ws) ws.close(); }
@@ -384,7 +404,6 @@ function handleMsg(m){
     const won=m.won; const isCpuResult=m.isCpu||window._isCpuBattle||oppName==='Zodiac Master'; const isTrainingResult=m.isTraining||window._isTrainingBattle;
     const winnerHp=m.winnerHp||0; const newHp=m.newHp||0;
     
-    // NUEVO: Actualizar perfil tras la batalla
     if(m.stats) updateProfileUI(m.stats);
     
     show('s-result');
@@ -446,7 +465,6 @@ function updateHPDisplay(hp){
   const elUsdc=document.getElementById('pick-usdc-val'); if(elUsdc) elUsdc.textContent='= '+(hp*0.001).toFixed(3)+' USDC';
   const loginHp=document.getElementById('wallet-hp'); if(loginHp){ loginHp.textContent=hp+' HP'; loginHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; }
   
-  // NUEVO: Actualizar HP en el perfil
   const profHp=document.getElementById('profile-hp'); if(profHp){ profHp.textContent=hp+' HP'; profHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; }
   const profUsdc=document.getElementById('profile-usdc'); if(profUsdc) profUsdc.textContent='= '+(hp*0.001).toFixed(3)+' USDC';
   
