@@ -5,6 +5,47 @@ let ws=null, myId=null, myName='', myBeast='', myRole='', oppName='', oppBeast='
 let mySt={}, oppSt={}, pendingFrom=null, pendingIsTraining=false;
 let reconnectTimer=null, myWallet='', myCurrentHP=0, isKicked=false;
 
+// ── GESTOR DE AUDIO ──
+const audioFiles = {
+    lobby: new Audio('audio/lobby.mp3'),
+    batalla: new Audio('audio/batalla.mp3'),
+    ataque: new Audio('audio/ataque.mp3'),
+    curacion: new Audio('audio/curacion.mp3'),
+    boton: new Audio('audio/boton.mp3')
+};
+audioFiles.lobby.loop = true; audioFiles.lobby.volume = 0.3;
+audioFiles.batalla.loop = true; audioFiles.batalla.batalla.volume = 0.3;
+let currentMusic = null;
+let isMuted = false;
+
+function playMusic(track) {
+    if (currentMusic === audioFiles[track]) return;
+    if (currentMusic) currentMusic.pause();
+    currentMusic = audioFiles[track];
+    if (!isMuted) currentMusic.play().catch(e=>{});
+}
+function playSfx(track) {
+    if (isMuted) return;
+    const sfx = audioFiles[track];
+    if (!sfx) return;
+    sfx.currentTime = 0;
+    sfx.play().catch(e=>{});
+}
+function toggleMute() {
+    isMuted = !isMuted;
+    const btn = document.getElementById('btn-mute');
+    if (isMuted) {
+        if (currentMusic) currentMusic.pause();
+        btn.textContent = '🔇';
+    } else {
+        if (currentMusic) currentMusic.play().catch(e=>{});
+        btn.textContent = '🔊';
+    }
+}
+// Sonido global para todos los botones
+document.addEventListener('click', (e) => { if(e.target.closest('.btn')) playSfx('boton'); });
+// ── FIN GESTOR DE AUDIO ──
+
 function copyWallet() {
   navigator.clipboard.writeText('C7pezdMQV5SnXWuzpt9YHnW1JrAAjvjdybNqoE8uZFTb')
     .then(() => {
@@ -98,7 +139,13 @@ async function checkHPNow(fromConnect=false) {
     }
   } catch(e) { document.getElementById('wallet-hp').textContent = 'Error al verificar'; }
 }
-function show(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
+function show(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  // NUEVO: Cambiar música al cambiar de pantalla
+  if(id === 's-login' || id === 's-pick' || id === 's-lobby') playMusic('lobby');
+  if(id === 's-battle' || id === 's-result') playMusic('batalla');
+}
 function hpColor(pct){return pct>50?'#5DCAA5':pct>25?'#EF9F27':'#F0997B';}
 function stTags(st,right=false){
   let t='';
@@ -313,6 +360,7 @@ function animHit(side, dmg){
   const spr=document.getElementById('spr-'+side); if(!spr) return;
   spr.classList.remove('anim-hit','anim-attack'); void spr.offsetWidth; spr.classList.add('anim-hit');
   const wrap=spr.closest('.f-sprite-wrap'); const fl=document.createElement('div'); fl.className='dmg-float'; fl.textContent='-'+dmg; fl.style.color=side==='me'?'#F0997B':'#F0997B'; wrap.appendChild(fl);
+  playSfx('ataque'); // NUEVO: Sonido de golpe al recibir daño
   setTimeout(()=>{spr.classList.remove('anim-hit');fl.remove();},800);
 }
 function animAttack(side){
@@ -447,7 +495,13 @@ function renderBattle(yourTurn, logs){
     lb.scrollTop=lb.scrollHeight;
   }
 }
-function doAttack(i){ animAttack('me'); ws.send(JSON.stringify({type:'attack',battleId,index:i})); }
+function doAttack(i){ 
+  animAttack('me'); 
+  // NUEVO: Sonido de ataque o curación
+  const atk = BEASTS[myBeast].attacks[i];
+  if(atk.d === 0) playSfx('curacion'); else playSfx('ataque');
+  ws.send(JSON.stringify({type:'attack',battleId,index:i})); 
+}
 function goChangeBeast(){
   buildPickGrid();
   if(myBeast){ setTimeout(()=>{ document.getElementById('bc-'+myBeast)?.classList.add('sel'); document.getElementById('btn-enter').disabled=false; },50); }
