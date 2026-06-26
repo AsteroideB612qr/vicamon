@@ -14,7 +14,7 @@ const audioFiles = {
     boton: new Audio('Audio/boton.mp3')
 };
 audioFiles.lobby.loop = true; audioFiles.lobby.volume = 0.3;
-audioFiles.batalla.loop = true; audioFiles.batalla.batalla.volume = 0.3;
+audioFiles.batalla.loop = true; audioFiles.batalla.volume = 0.3;
 let currentMusic = null;
 let isMuted = false;
 
@@ -497,9 +497,10 @@ function renderBattle(yourTurn, logs){
 }
 function doAttack(i){ 
   animAttack('me'); 
-  // NUEVO: Sonido de ataque o curación
-  const atk = BEASTS[myBeast].attacks[i];
-  if(atk.d === 0) playSfx('curacion'); else playSfx('ataque');
+  try {
+    const atk = BEASTS[myBeast].attacks[i];
+    if(atk.d === 0) playSfx('curacion'); else playSfx('ataque');
+  } catch(e) { console.error("Audio error:", e); }
   ws.send(JSON.stringify({type:'attack',battleId,index:i})); 
 }
 function goChangeBeast(){
