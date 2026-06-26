@@ -7,11 +7,11 @@ let reconnectTimer=null, myWallet='', myCurrentHP=0, isKicked=false;
 
 // ── GESTOR DE AUDIO ──
 const audioFiles = {
-    lobby: new Audio('audio/lobby.mp3'),
-    batalla: new Audio('audio/batalla.mp3'),
-    ataque: new Audio('audio/ataque.mp3'),
-    curacion: new Audio('audio/curacion.mp3'),
-    boton: new Audio('audio/boton.mp3')
+    lobby: new Audio('Audio/lobby.mp3'),
+    batalla: new Audio('Audio/batalla.mp3'),
+    ataque: new Audio('Audio/ataque.mp3'),
+    curacion: new Audio('Audio/curacion.mp3'),
+    boton: new Audio('Audio/boton.mp3')
 };
 audioFiles.lobby.loop = true; audioFiles.lobby.volume = 0.3;
 audioFiles.batalla.loop = true; audioFiles.batalla.batalla.volume = 0.3;
