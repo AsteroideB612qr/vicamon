@@ -330,12 +330,12 @@ function connectWS(){
   };
 }
 function handleMsg(m){
-  if(m.type==='joined'){ 
+    if(m.type==='joined'){ 
     myId=m.id; 
     if(m.hp !== undefined) updateHPDisplay(m.hp); 
     updateLobbyBadge(); 
     updateProfileUI(m.stats); // NUEVO
-    if(!isKicked) show('s-profile'); // NUEVO: Al conectar va al perfil
+    if(!isKicked) show('s-lobby'); // CORREGIDO: Al conectar va al lobby
     checkHPNow(false); 
   }
   if(m.type==='kicked'){ isKicked=true; alert(m.msg); show('s-login'); if(ws) ws.close(); }
