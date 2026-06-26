@@ -18,6 +18,7 @@ audioFiles.lobby.loop = true; audioFiles.lobby.volume = 0.3;
 audioFiles.batalla.loop = true; audioFiles.batalla.volume = 0.3;
 let currentMusic = null;
 let isMuted = false;
+let challengeBeepInterval = null; // NUEVO: Controlador para la alarma de reto
 
 function playMusic(track) {
     if (currentMusic === audioFiles[track]) return;
@@ -43,6 +44,22 @@ function toggleMute() {
         btn.textContent = '🔊';
     }
 }
+
+// NUEVO: Alarma de reto
+function startChallengeBeep() {
+    if (challengeBeepInterval) return;
+    playSfx('boton'); // Sonar inmediatamente
+    challengeBeepInterval = setInterval(() => {
+        playSfx('boton');
+    }, 1500); // Repetir cada 1.5 segundos
+}
+function stopChallengeBeep() {
+    if (challengeBeepInterval) {
+        clearInterval(challengeBeepInterval);
+        challengeBeepInterval = null;
+    }
+}
+
 document.addEventListener('click', (e) => { if(e.target.closest('.btn')) playSfx('boton'); });
 // ── FIN GESTOR DE AUDIO ──
 
@@ -179,7 +196,6 @@ function show(id){
 
 function showPickGrid() {
   buildPickGrid();
-  // NUEVO: Si ya tenemos un vicamon seleccionado, marcarlo y habilitar el botón
   if(myBeast) {
     document.getElementById('bc-'+myBeast)?.classList.add('sel');
     document.getElementById('btn-enter').disabled = false;
@@ -322,7 +338,6 @@ function goPickBeast(){
   checkHPNow(false);
 }
 
-// CORREGIDO: Evitar reconexión si ya estamos conectados
 function enterLobby(){ 
   if(!myBeast) return; 
   if(ws && ws.readyState === 1) {
@@ -333,7 +348,6 @@ function enterLobby(){
   }
 }
 
-// CORREGIDO: Blindar la reconexión
 function connectWS(){
   clearTimeout(reconnectTimer);
   isKicked=false;
@@ -348,7 +362,7 @@ function connectWS(){
   localWs.onerror=()=>{};
   
   localWs.onclose=()=>{
-    if(ws !== localWs) return; // Si esta conexión ya fue reemplazada, ignorarla
+    if(ws !== localWs) return; 
     const inBattle=document.getElementById('s-battle').classList.contains('active');
     if(!inBattle && !isKicked) reconnectTimer=setTimeout(()=>{ if(myName&&myBeast) connectWS(); },2000);
   };
@@ -362,7 +376,7 @@ function handleMsg(m){
     if(m.hp !== undefined) updateHPDisplay(m.hp); 
     updateLobbyBadge(); 
     updateProfileUI(m.stats);
-    if(!isKicked) show('s-lobby'); // CORREGIDO: Va al lobby al conectar
+    if(!isKicked) show('s-lobby'); 
     checkHPNow(false); 
   }
   if(m.type==='kicked'){ isKicked=true; alert(m.msg); show('s-login'); if(ws) ws.close(); }
@@ -376,6 +390,7 @@ function handleMsg(m){
     document.getElementById('ch-title').textContent=`¡Reto de ${m.fromName}!`;
     document.getElementById('ch-sub').textContent=pendingIsTraining ? `${m.fromName} quiere un ENTRENAMIENTO con su ${b.name}. (Sin apostar HP)` : `${m.fromName} quiere batallar con su ${b.name}. ¿Aceptas el combate?`;
     document.getElementById('modal-challenged').classList.remove('hidden');
+    startChallengeBeep(); // NUEVO: Iniciar alarma
   }
   if(m.type==='battle_start'){
     battleId=m.battleId; myRole=m.role; oppName=m.opponent; oppBeast=m.opponentBeast;
@@ -488,11 +503,16 @@ function sendChallenge(targetId,name){ if(confirm(`¿Retar a ${name} a combate p
 function sendChallengeTraining(targetId,name){ if(confirm(`¿Retar a ${name} a un ENTRENAMIENTO? (Sin apostar HP)`)) ws.send(JSON.stringify({type:'challenge_training',targetId})); }
 function challengeMaster(){ ws.send(JSON.stringify({type:'challenge_cpu'})); }
 function acceptChallenge(){
-  document.getElementById('modal-challenged').classList.add('hidden'); // CORREGIDO: Ahora se oculta al aceptar
+  document.getElementById('modal-challenged').classList.add('hidden');
+  stopChallengeBeep(); // NUEVO: Detener alarma
   if(pendingFrom!==null) ws.send(JSON.stringify({type:'accept',fromId:pendingFrom, isTraining: pendingIsTraining}));
   pendingIsTraining=false; pendingFrom=null;
 }
-function rejectChallenge(){ document.getElementById('modal-challenged').classList.add('hidden'); pendingFrom=null; pendingIsTraining=false; }
+function rejectChallenge(){ 
+  document.getElementById('modal-challenged').classList.add('hidden'); 
+  stopChallengeBeep(); // NUEVO: Detener alarma
+  pendingFrom=null; pendingIsTraining=false; 
+}
 function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
 function sendChatMessage(){ const input = document.getElementById('chat-input'); const msg = input.value.trim(); if(msg && ws && ws.readyState === 1){ ws.send(JSON.stringify({type:'chat_message', text:msg})); input.value = ''; } }
 function handleChatMessage(m){
@@ -596,9 +616,9 @@ function goChangeBeast(){
 }
 function leaveLobby(){ 
   if(ws) ws.send(JSON.stringify({type:'leave_lobby'}));
-  isKicked = true; // Evita que el juego intente reconectar automáticamente
+  isKicked = true; 
   if(ws) { try { ws.close(); } catch(e){} }
-  ws = null; // Borramos la conexión vieja
+  ws = null; 
   show('s-profile'); 
 }
 function backToLobby(){ updateLobbyBadge(); show('s-lobby'); }
