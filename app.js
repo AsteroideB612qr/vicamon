@@ -59,7 +59,6 @@ function stopChallengeBeep() {
 document.addEventListener('click', (e) => { if(e.target.closest('.btn')) playSfx('boton'); });
 // ── FIN GESTOR DE AUDIO ──
 
-// NUEVO: Ocultar o mostrar el botón de la Torre según el interruptor
 window.addEventListener('load', () => {
     const btnG = document.getElementById('btn-gauntlet');
     if (btnG) btnG.style.display = GAUNTLET_HABILITADO ? 'inline-block' : 'none';
@@ -368,21 +367,18 @@ function connectWS(){
   ws = localWs;
 }
 
-// NUEVO: Iniciar Torre de Batalla
 function challengeGauntlet() {
   if(!confirm('¿Iniciar la Torre de Batalla? Apostarás 100 HP. Si derrotas a los 12 Vicamons, ganarás 100 HP extra. Si caes, perderás tus 100 HP.')) return;
   ws.send(JSON.stringify({type:'challenge_gauntlet'}));
 }
 
-// NUEVO: Continuar al siguiente jefe en la Torre
 function continueGauntlet() {
   document.getElementById('modal-gauntlet').classList.add('hidden');
   const beastToUse = gauntletSelectedBeast || myBeast;
   ws.send(JSON.stringify({type:'gauntlet_continue', battleId: gauntletBattleId, beast: beastToUse}));
-  myBeast = beastToUse; // Actualizar mi beast localmente
+  myBeast = beastToUse; 
 }
 
-// NUEVO: Seleccionar beast en el modal de Gauntlet
 function selectGauntletBeast(k) {
   gauntletSelectedBeast = k;
   document.querySelectorAll('#g-beast-picker .bcard').forEach(c=>c.classList.remove('sel'));
@@ -403,16 +399,15 @@ function handleMsg(m){
   if(m.type==='leaderboard_update'){ renderLeaderboard(m.top); }
   if(m.type==='chat_message'){ handleChatMessage(m); }
   
-  // NUEVO: Manejar transición de jefes en la Torre
   if(m.type==='gauntlet_next'){
     gauntletBattleId = m.battleId;
-    gauntletSelectedBeast = myBeast; // Por defecto, el actual
+    gauntletSelectedBeast = myBeast;
     
     const b = BEASTS[m.nextBeast];
-    document.getElementById('g-title').textContent = `¡Jefe ${m.round}/12 derrotado!`;
-    document.getElementById('g-sub').innerHTML = `Tu HP se ha restaurado a 100.<br>El próximo rival es <strong style="color:#CFA9EC">${b.name}</strong>.<br>¿Quieres cambiar de Vicamon?`;
+    // CORREGIDO: Texto del modal
+    document.getElementById('g-title').textContent = `¡Jefe ${m.round - 1}/12 derrotado!`;
+    document.getElementById('g-sub').innerHTML = `Tu HP se ha restaurado a 100.<br>El próximo rival es <strong style="color:#CFA9EC">${b.name}</strong> (${m.round}/12).<br>¿Quieres cambiar de Vicamon?`;
     
-    // Poblar el mini-grid de beasts
     const picker = document.getElementById('g-beast-picker');
     picker.innerHTML = Object.entries(BEASTS).map(([k,b])=>`
       <div class="bcard" id="gbc-${k}" style="padding:5px" onclick="selectGauntletBeast('${k}')">
@@ -421,9 +416,7 @@ function handleMsg(m){
       </div>
     `).join('');
     
-    // Marcar el beast actual
     document.getElementById('gbc-'+myBeast)?.classList.add('sel');
-    
     document.getElementById('modal-gauntlet').classList.remove('hidden');
     return;
   }
@@ -442,7 +435,7 @@ function handleMsg(m){
     const empty={hp:100,maxHp:100,poisonDmg:0,poisonTurns:0,burnDmg:0,burnTurns:0,shield:0,shieldReflect:0,reflect50:0,stun:false,recharge:0,regen:0,regenTurns:0,blind:0,weakAtk:0,weaken:0,corrode:0,analyzed:0,lastDmgReceived:0,pp:[]};
     mySt={...empty}; oppSt={...empty};
     window._isCpuBattle=!!m.isCpu; window._isTrainingBattle=!!m.isTraining;
-    window._isGauntlet=!!m.isGauntlet; // NUEVO
+    window._isGauntlet=!!m.isGauntlet;
     const isCpu=!!m.isCpu; const isTraining=!!m.isTraining;
     let startMsg='';
     if(isTraining) startMsg = `¡Entrenamiento amistoso! ${myName} (${BEASTS[myBeast]?.name}) vs ${oppName} (${BEASTS[oppBeast]?.name})`;
@@ -472,19 +465,18 @@ function handleMsg(m){
     const won=m.won; 
     const isCpuResult=m.isCpu||window._isCpuBattle||oppName==='Zodiac Master'; 
     const isTrainingResult=m.isTraining||window._isTrainingBattle;
-    const isGauntletResult=m.isGauntlet||window._isGauntlet; // NUEVO
+    const isGauntletResult=m.isGauntlet||window._isGauntlet; 
     const winnerHp=m.winnerHp||0; const newHp=m.newHp||0;
     
     if(m.stats) updateProfileUI(m.stats);
     
     show('s-result');
     if(!isCpuResult && !isTrainingResult) updateHPDisplay(newHp);
-    if(isGauntletResult) updateHPDisplay(newHp); // NUEVO: Actualizar HP en Gauntlet
+    if(isGauntletResult) updateHPDisplay(newHp); 
     
     const b1=BEASTS[myBeast],b2=BEASTS[oppBeast];
     let resultBody='';
     
-    // NUEVO: Cuerpo de resultado para Gauntlet
     if(isGauntletResult){
       if(won){
         resultBody=`<div style="background:rgba(246, 226, 102, 0.1);border:0.5px solid rgba(246, 226, 102, 0.3);border-radius:10px;padding:14px;margin:14px 0;text-align:left">
@@ -549,7 +541,12 @@ function animAttack(side){
   spr.classList.remove('anim-attack'); void spr.offsetWidth; spr.classList.add('anim-attack');
   setTimeout(()=>spr.classList.remove('anim-attack'),400);
 }
-function updateLobbyBadge(){ document.getElementById('lbl-myname').textContent=myName; const b=BEASTS[myBeast]; if(b) document.getElementById('badge-img').src=b.img; }
+function updateLobbyBadge(){ 
+  document.getElementById('lbl-myname').textContent=myName; 
+  document.getElementById('lbl-myhp').textContent = myCurrentHP + ' HP'; // NUEVO
+  const b=BEASTS[myBeast]; 
+  if(b) document.getElementById('badge-img').src=b.img; 
+}
 let _lastLobbyPlayers=[];
 function renderLobbyFromCache(){ renderLobby(_lastLobbyPlayers); }
 function renderLobby(others){
@@ -589,7 +586,10 @@ function updateHPDisplay(hp){
   const pickDep = document.getElementById('pick-deposit-widget'); if(pickDep) pickDep.innerHTML = depHtml;
   const lobbyDep = document.getElementById('lobby-deposit-widget'); if(lobbyDep) lobbyDep.innerHTML = depHtml;
   const profDep = document.getElementById('profile-deposit-widget'); if(profDep) profDep.innerHTML = depHtml;
-  if(document.getElementById('s-lobby')?.classList.contains('active')){ const cur = document.getElementById('players-list'); if(cur) renderLobbyFromCache(); }
+  if(document.getElementById('s-lobby')?.classList.contains('active')){ 
+    const cur = document.getElementById('players-list'); if(cur) renderLobbyFromCache();
+    updateLobbyBadge(); // NUEVO: Actualizar HP del badge
+  }
 }
 function sendChallenge(targetId,name){ if(confirm(`¿Retar a ${name} a combate por HP?`)) ws.send(JSON.stringify({type:'challenge',targetId})); }
 function sendChallengeTraining(targetId,name){ if(confirm(`¿Retar a ${name} a un ENTRENAMIENTO? (Sin apostar HP)`)) ws.send(JSON.stringify({type:'challenge_training',targetId})); }
