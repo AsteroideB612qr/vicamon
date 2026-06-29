@@ -150,6 +150,8 @@ window.addEventListener('load', async () => {
     } catch(e) {}
   }
 });
+
+// MODIFICADO: Ahora lee las stats desde el endpoint /hp
 async function checkHPNow(fromConnect=false) {
   if (!myWallet) return;
   try {
@@ -159,6 +161,7 @@ async function checkHPNow(fromConnect=false) {
     const loginHp = document.getElementById('wallet-hp');
     if(loginHp){ loginHp.textContent=hp+' HP'; loginHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; }
     updateHPDisplay(hp);
+    if (data.stats) updateProfileUI(data.stats); // NUEVO
     if(document.getElementById('s-lobby').classList.contains('active') && ws){ ws.send(JSON.stringify({type:'ping'})); }
     if (hp >= 100) {
       document.getElementById('step-charge').style.display='none';
@@ -317,6 +320,8 @@ function showBeastDetail(k){
   panel.classList.add('open');
   panel.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
+
+// CORREGIDO: Ya no pisa el onclick del botón, avisa al servidor directamente
 function selectBeast(k){
   myBeast=k;
   document.querySelectorAll('.bcard').forEach(c=>c.classList.remove('sel'));
@@ -368,6 +373,7 @@ function connectWS(){
 }
 
 function challengeGauntlet() {
+  if(!ws || ws.readyState !== 1) return alert('Espera, estás conectando al servidor.');
   if(!confirm('¿Iniciar la Torre de Batalla? Apostarás 100 HP. Si derrotas a los 12 Vicamons, ganarás 100 HP extra. Si caes, perderás tus 100 HP.')) return;
   ws.send(JSON.stringify({type:'challenge_gauntlet'}));
 }
@@ -404,7 +410,6 @@ function handleMsg(m){
     gauntletSelectedBeast = myBeast;
     
     const b = BEASTS[m.nextBeast];
-    // CORREGIDO: Texto del modal
     document.getElementById('g-title').textContent = `¡Jefe ${m.round - 1}/12 derrotado!`;
     document.getElementById('g-sub').innerHTML = `Tu HP se ha restaurado a 100.<br>El próximo rival es <strong style="color:#CFA9EC">${b.name}</strong> (${m.round}/12).<br>¿Quieres cambiar de Vicamon?`;
     
@@ -543,7 +548,8 @@ function animAttack(side){
 }
 function updateLobbyBadge(){ 
   document.getElementById('lbl-myname').textContent=myName; 
-  document.getElementById('lbl-myhp').textContent = myCurrentHP + ' HP'; // NUEVO
+  const hpEl = document.getElementById('lbl-myhp');
+  if(hpEl) hpEl.textContent = myCurrentHP + ' HP';
   const b=BEASTS[myBeast]; 
   if(b) document.getElementById('badge-img').src=b.img; 
 }
@@ -588,12 +594,12 @@ function updateHPDisplay(hp){
   const profDep = document.getElementById('profile-deposit-widget'); if(profDep) profDep.innerHTML = depHtml;
   if(document.getElementById('s-lobby')?.classList.contains('active')){ 
     const cur = document.getElementById('players-list'); if(cur) renderLobbyFromCache();
-    updateLobbyBadge(); // NUEVO: Actualizar HP del badge
+    updateLobbyBadge();
   }
 }
-function sendChallenge(targetId,name){ if(confirm(`¿Retar a ${name} a combate por HP?`)) ws.send(JSON.stringify({type:'challenge',targetId})); }
-function sendChallengeTraining(targetId,name){ if(confirm(`¿Retar a ${name} a un ENTRENAMIENTO? (Sin apostar HP)`)) ws.send(JSON.stringify({type:'challenge_training',targetId})); }
-function challengeMaster(){ ws.send(JSON.stringify({type:'challenge_cpu'})); }
+function sendChallenge(targetId,name){ if(!ws || ws.readyState !== 1) return; if(confirm(`¿Retar a ${name} a combate por HP?`)) ws.send(JSON.stringify({type:'challenge',targetId})); }
+function sendChallengeTraining(targetId,name){ if(!ws || ws.readyState !== 1) return; if(confirm(`¿Retar a ${name} a un ENTRENAMIENTO? (Sin apostar HP)`)) ws.send(JSON.stringify({type:'challenge_training',targetId})); }
+function challengeMaster(){ if(!ws || ws.readyState !== 1) return; ws.send(JSON.stringify({type:'challenge_cpu'})); }
 function acceptChallenge(){
   document.getElementById('modal-challenged').classList.add('hidden');
   stopChallengeBeep();
@@ -694,16 +700,16 @@ function doAttack(i){
   } catch(e) { console.error("Audio error:", e); }
   ws.send(JSON.stringify({type:'attack',battleId,index:i})); 
 }
+
+// CORREGIDO: Eliminado el bloque que rompía el botón btn-enter
 function goChangeBeast(){
   buildPickGrid();
-  if(myBeast){ setTimeout(()=>{ document.getElementById('bc-'+myBeast)?.classList.add('sel'); document.getElementById('btn-enter').disabled=false; },50); }
-  document.getElementById('btn-enter').onclick=function(){
-    if(!myBeast)return;
-    if(ws&&ws.readyState===1) ws.send(JSON.stringify({type:'change_beast',beast:myBeast}));
-    updateLobbyBadge();
-    document.getElementById('btn-enter').onclick=null;
-    show('s-lobby');
-  };
+  if(myBeast){ 
+    setTimeout(()=>{ 
+      document.getElementById('bc-'+myBeast)?.classList.add('sel'); 
+      document.getElementById('btn-enter').disabled=false; 
+    },50); 
+  }
   show('s-pick');
 }
 function leaveLobby(){ 
