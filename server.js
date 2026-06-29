@@ -197,6 +197,7 @@ async function endBattle(bId, winnerId, loserId, winnerHp, forfeit=false) {
   await pushLobby();
 }
 
+// CORREGIDO: Bloqueo de turno (-2) al morir un jefe para evitar ataques dobles
 async function checkCpuDeath(bId) {
   const b=battles.get(bId); if (!b) return false;
   const cpuSt=b.cpuIsP1?b.st1:b.st2;
@@ -205,6 +206,7 @@ async function checkCpuDeath(bId) {
   
   if (cpuSt.hp<=0) {
     if (b.isGauntlet) {
+      b.turnId = -2; // BLOQUEAR ATAQUES
       pushCpuBattle(bId); 
       setTimeout(() => {
         const bb = battles.get(bId); if (!bb) return;
@@ -216,8 +218,7 @@ async function checkCpuDeath(bId) {
           if (!pl) return endGauntlet(bId, plId, false);
           bb.cpuBeast = BEAST_KEYS[bb.gauntletIndex];
           bb.st1 = getStartState(bb.cpuBeast);
-          bb.st2 = getStartState(pl.beast);
-          bb.turnId = CPU_ID;
+          bb.turnId = CPU_ID; 
           bb.logs.push({t:`¡Jefe derrotado! Prepárate para ${BEASTS[bb.cpuBeast].name} (${bb.gauntletIndex+1}/12). HP restaurado.`, c:'good'});
           send(pl.ws, { type: 'gauntlet_next', battleId: bId, nextBeast: bb.cpuBeast, round: bb.gauntletIndex+1, logs: bb.logs.slice(-14) });
         }
@@ -229,6 +230,7 @@ async function checkCpuDeath(bId) {
   }
   if (plSt.hp<=0) {
     if (b.isGauntlet) {
+      b.turnId = -2; // BLOQUEAR ATAQUES
       pushCpuBattle(bId);
       setTimeout(() => endGauntlet(bId, plId, false), 1500);
     } else {
@@ -450,7 +452,6 @@ wss.on('connection', ws => {
       else await processTurn(msg.battleId, id, msg.index);
     }
 
-    // NUEVO: Rendirse
     if (msg.type==='surrender') {
       const b = battles.get(msg.battleId); if (!b) return;
       if (b.isGauntlet) {
