@@ -1,4 +1,4 @@
-const GAUNTLET_HABILITADO = false; // Cambiar a false para desactivar la Torre de Batalla
+const GAUNTLET_HABILITADO = true; // Cambiar a false para desactivar la Torre de Batalla
 
 const EL={fuego:'#E8621A',tierra:'#7A9A3E',aire:'#4A9EFF',agua:'#2C6AA0'};
 const STCSS={agresivo:'background:rgba(216,90,48,.2);color:#F0997B',defensivo:'background:rgba(15,110,86,.2);color:#5DCAA5',tactico:'background:rgba(83,74,183,.2);color:#AFA9EC',equilibrado:'background:rgba(55,138,221,.2);color:#85B7EB',veneno:'background:rgba(83,150,40,.2);color:#9ECC5A',caos:'background:rgba(212,83,126,.2);color:#ED93B1',soporte:'background:rgba(130,80,180,.2);color:#CFA9EC'};
@@ -151,7 +151,6 @@ window.addEventListener('load', async () => {
   }
 });
 
-// MODIFICADO: Ahora lee las stats desde el endpoint /hp
 async function checkHPNow(fromConnect=false) {
   if (!myWallet) return;
   try {
@@ -161,7 +160,7 @@ async function checkHPNow(fromConnect=false) {
     const loginHp = document.getElementById('wallet-hp');
     if(loginHp){ loginHp.textContent=hp+' HP'; loginHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; }
     updateHPDisplay(hp);
-    if (data.stats) updateProfileUI(data.stats); // NUEVO
+    if (data.stats) updateProfileUI(data.stats);
     if(document.getElementById('s-lobby').classList.contains('active') && ws){ ws.send(JSON.stringify({type:'ping'})); }
     if (hp >= 100) {
       document.getElementById('step-charge').style.display='none';
@@ -321,7 +320,6 @@ function showBeastDetail(k){
   panel.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
-// CORREGIDO: Ya no pisa el onclick del botón, avisa al servidor directamente
 function selectBeast(k){
   myBeast=k;
   document.querySelectorAll('.bcard').forEach(c=>c.classList.remove('sel'));
@@ -355,20 +353,14 @@ function connectWS(){
   isKicked=false;
   const proto=location.protocol==='https:'?'wss':'ws';
   const localWs = new WebSocket(`${proto}://${location.host}`);
-  
-  localWs.onopen=()=>{ 
-    clearTimeout(reconnectTimer);
-    localWs.send(JSON.stringify({type:'join',name:myName,beast:myBeast,wallet:myWallet})); 
-  };
+  localWs.onopen=()=>{ clearTimeout(reconnectTimer); localWs.send(JSON.stringify({type:'join',name:myName,beast:myBeast,wallet:myWallet})); };
   localWs.onmessage=e=>{try{handleMsg(JSON.parse(e.data));}catch(err){console.error(err);}};
   localWs.onerror=()=>{};
-  
   localWs.onclose=()=>{
     if(ws !== localWs) return; 
     const inBattle=document.getElementById('s-battle').classList.contains('active');
     if(!inBattle && !isKicked) reconnectTimer=setTimeout(()=>{ if(myName&&myBeast) connectWS(); },2000);
   };
-  
   ws = localWs;
 }
 
@@ -391,6 +383,12 @@ function selectGauntletBeast(k) {
   document.getElementById('gbc-'+k)?.classList.add('sel');
 }
 
+// NUEVO: Rendirse
+function surrender() {
+  if(!confirm('¿Estás seguro de rendirte? Si es una batalla de HP o Torre, perderás tu apuesta.')) return;
+  if(ws && ws.readyState === 1) ws.send(JSON.stringify({type:'surrender', battleId}));
+}
+
 function handleMsg(m){
   if(m.type==='joined'){ 
     myId=m.id; 
@@ -408,11 +406,9 @@ function handleMsg(m){
   if(m.type==='gauntlet_next'){
     gauntletBattleId = m.battleId;
     gauntletSelectedBeast = myBeast;
-    
     const b = BEASTS[m.nextBeast];
     document.getElementById('g-title').textContent = `¡Jefe ${m.round - 1}/12 derrotado!`;
     document.getElementById('g-sub').innerHTML = `Tu HP se ha restaurado a 100.<br>El próximo rival es <strong style="color:#CFA9EC">${b.name}</strong> (${m.round}/12).<br>¿Quieres cambiar de Vicamon?`;
-    
     const picker = document.getElementById('g-beast-picker');
     picker.innerHTML = Object.entries(BEASTS).map(([k,b])=>`
       <div class="bcard" id="gbc-${k}" style="padding:5px" onclick="selectGauntletBeast('${k}')">
@@ -420,7 +416,6 @@ function handleMsg(m){
         <div class="bname" style="font-size:10px">${b.name}</div>
       </div>
     `).join('');
-    
     document.getElementById('gbc-'+myBeast)?.classList.add('sel');
     document.getElementById('modal-gauntlet').classList.remove('hidden');
     return;
@@ -451,6 +446,8 @@ function handleMsg(m){
   }
   if(m.type==='battle_state'){
     const me=myRole==='p1'?m.p1:m.p2; const opp=myRole==='p1'?m.p2:m.p1;
+    myBeast = me.beast || myBeast; // NUEVO: Actualizar Vicamon en la UI
+    oppBeast = opp.beast || oppBeast; // NUEVO: Actualizar Jefe en la UI
     const prevMyHp=mySt.hp, prevOppHp=oppSt.hp;
     mySt=me.state; oppSt=opp.state;
     if(mySt.hp<prevMyHp) animHit('me',prevMyHp-mySt.hp);
@@ -486,35 +483,17 @@ function handleMsg(m){
       if(won){
         resultBody=`<div style="background:rgba(246, 226, 102, 0.1);border:0.5px solid rgba(246, 226, 102, 0.3);border-radius:10px;padding:14px;margin:14px 0;text-align:left">
           <div style="font-size:11px;color:#F6E266;margin-bottom:10px;text-transform:uppercase;letter-spacing:.08em">¡Torre de Batalla Completada!</div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-            <span style="font-size:13px;color:rgba(255,255,255,.6)">Apuesta devuelta</span>
-            <span style="font-size:13px;color:#5DCAA5;font-weight:600">+100 HP</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-            <span style="font-size:13px;color:rgba(255,255,255,.6)">Premio por derrotar a los 12</span>
-            <span style="font-size:13px;color:#5DCAA5;font-weight:600">+100 HP</span>
-          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-size:13px;color:rgba(255,255,255,.6)">Apuesta devuelta</span><span style="font-size:13px;color:#5DCAA5;font-weight:600">+100 HP</span></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-size:13px;color:rgba(255,255,255,.6)">Premio por derrotar a los 12</span><span style="font-size:13px;color:#5DCAA5;font-weight:600">+100 HP</span></div>
           <div style="border-top:0.5px solid rgba(255,255,255,.1);margin:10px 0"></div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-            <span style="font-size:13px;font-weight:600;color:#fff">Tu HP ahora</span>
-            <span style="font-size:15px;font-weight:700;color:#5DCAA5">${newHp} HP</span>
-          </div>
-          <div style="display:flex;justify-content:space-between">
-            <span style="font-size:11px;color:rgba(255,255,255,.35)">Equivalente en USDC</span>
-            <span style="font-size:11px;color:rgba(255,255,255,.35)">${(newHp*0.001).toFixed(3)} USDC</span>
-          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:600;color:#fff">Tu HP ahora</span><span style="font-size:15px;font-weight:700;color:#5DCAA5">${newHp} HP</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-size:11px;color:rgba(255,255,255,.35)">Equivalente en USDC</span><span style="font-size:11px;color:rgba(255,255,255,.35)">${(newHp*0.001).toFixed(3)} USDC</span></div>
         </div>`;
       } else {
         resultBody=`<div style="background:rgba(255,255,255,.05);border-radius:10px;padding:14px;margin:14px 0;text-align:left">
           <div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:10px;text-transform:uppercase;letter-spacing:.08em">Torre de Batalla Fallida</div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-            <span style="font-size:13px;color:rgba(255,255,255,.6)">HP apostados perdidos</span>
-            <span style="font-size:13px;color:#F0997B;font-weight:600">-100 HP</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-            <span style="font-size:13px;color:rgba(255,255,255,.6)">Tu HP ahora</span>
-            <span style="font-size:13px;color:#F0997B;font-weight:600">${newHp} HP</span>
-          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-size:13px;color:rgba(255,255,255,.6)">HP apostados perdidos</span><span style="font-size:13px;color:#F0997B;font-weight:600">-100 HP</span></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-size:13px;color:rgba(255,255,255,.6)">Tu HP ahora</span><span style="font-size:13px;color:#F0997B;font-weight:600">${newHp} HP</span></div>
         </div>`;
       }
     } else if(isTrainingResult){
@@ -581,10 +560,8 @@ function updateHPDisplay(hp){
   const el=document.getElementById('pick-hp-val'); if(el){ el.textContent=hp+' HP'; el.style.color=hp>=100?'#5DCAA5':'#EF9F27'; }
   const elUsdc=document.getElementById('pick-usdc-val'); if(elUsdc) elUsdc.textContent='= '+(hp*0.001).toFixed(3)+' USDC';
   const loginHp=document.getElementById('wallet-hp'); if(loginHp){ loginHp.textContent=hp+' HP'; loginHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; }
-  
   const profHp=document.getElementById('profile-hp'); if(profHp){ profHp.textContent=hp+' HP'; profHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; }
   const profUsdc=document.getElementById('profile-usdc'); if(profUsdc) profUsdc.textContent='= '+(hp*0.001).toFixed(3)+' USDC';
-  
   const btn=document.getElementById('btn-cashout'); if(btn){ btn.style.display=hp>0?'inline-block':'none'; btn.disabled=false; btn.textContent='💰 Cashout'; }
   const warn=document.getElementById('low-hp-warning'); if(warn) warn.style.display=hp<100?'block':'none';
   const charge=document.getElementById('step-charge'); if(charge) charge.style.display = hp<100 ? 'block' : 'none';
@@ -638,86 +615,4 @@ function renderLeaderboard(top) {
     return `<div style="flex:1;background:rgba(255,255,255,.04);border:0.5px solid ${colors[i]};border-radius:10px;padding:10px 6px;text-align:center;backdrop-filter:blur(4px)">
       <div style="font-size:20px;margin-bottom:2px">${medals[i] || '🏆'}</div>
       <div style="font-size:12px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</div>
-      <div style="font-size:9px;color:rgba(255,255,255,.5);margin-top:3px">${wins}V · ${losses}D</div>
-    </div>`;
-  }).join('');
-}
-function renderBattle(yourTurn, logs){
-  document.getElementById('f-me').innerHTML=panelHTML(mySt,myBeast,myName+' (tú)','me');
-  document.getElementById('f-opp').innerHTML=panelHTML(oppSt,oppBeast,oppName,'opp');
-  const orb=document.getElementById('turn-orb'); if(orb) orb.style.display=yourTurn?'block':'none';
-  const locked=!yourTurn||mySt.stun||mySt.recharge>0;
-  let tb='';
-  if(yourTurn){
-    if(mySt.stun) tb='Estás aturdido — pierdes este turno';
-    else if(mySt.recharge>0) tb=`⚡ Recargando — espera ${mySt.recharge} turno(s)`;
-    else tb='<span>Tu turno</span> — elige un ataque';
-  } else tb='Turno del rival...';
-  document.getElementById('turn-bar').innerHTML=tb;
-
-  const b=BEASTS[myBeast];
-  document.getElementById('atk-grid').innerHTML=b.attacks.map((a,i)=>{
-    const tags=[];
-    if(a.pierce) tags.push('<span class="atk-tag tag-pierce">Ignora escudo</span>');
-    if(a.fx==='double') tags.push('<span class="atk-tag tag-nobreak">Doble golpe</span>');
-    if(a.fx==='triple') tags.push('<span class="atk-tag tag-nobreak">Triple golpe</span>');
-    if(a.risk||a.self>0) tags.push(`<span class="atk-tag tag-risk">Riesgo${a.self>0?' -'+a.self+' HP':''}</span>`);
-    if(a.buff) tags.push('<span class="atk-tag tag-buff">Buff</span>');
-    if(a.dot)  tags.push('<span class="atk-tag tag-dot">Daño/turno</span>');
-    if(a.debuff) tags.push('<span class="atk-tag tag-debuff">Debuff</span>');
-    
-    const currentPp = mySt.pp ? mySt.pp[i] : undefined;
-    const maxPp = a.pp === undefined ? 99 : a.pp;
-    const ppLeft = currentPp === undefined ? maxPp : currentPp;
-    const isDisabled = locked || ppLeft <= 0;
-    const ppText = maxPp === 99 ? '∞' : `${ppLeft}/${maxPp}`;
-    
-    return `<button class="atk-btn" ${isDisabled?'disabled':''} onclick="doAttack(${i})">
-      <div class="atk-top">
-        <div class="atk-name">${a.n}</div>
-        <div class="atk-dmg ${dmgClass(a)}">${dmgLabel(a)}</div>
-      </div>
-      <div class="atk-tags">${tags.join('')}</div>
-      <div class="atk-desc">${a.desc}</div>
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div class="atk-acc">${a.acc}% precisión</div>
-        <div class="atk-acc" style="color:rgba(255,255,255,.5)">PP: ${ppText}</div>
-      </div>
-    </button>`;
-  }).join('');
-
-  if(logs&&logs.length){
-    const lb=document.getElementById('log-box');
-    lb.innerHTML=logs.map(l=>`<div class="ll lc-${l.c||'normal'}">${l.t}</div>`).join('');
-    lb.scrollTop=lb.scrollHeight;
-  }
-}
-function doAttack(i){ 
-  animAttack('me'); 
-  try {
-    const atk = BEASTS[myBeast].attacks[i];
-    if(atk.d === 0) playSfx('curacion'); else playSfx('ataque');
-  } catch(e) { console.error("Audio error:", e); }
-  ws.send(JSON.stringify({type:'attack',battleId,index:i})); 
-}
-
-// CORREGIDO: Eliminado el bloque que rompía el botón btn-enter
-function goChangeBeast(){
-  buildPickGrid();
-  if(myBeast){ 
-    setTimeout(()=>{ 
-      document.getElementById('bc-'+myBeast)?.classList.add('sel'); 
-      document.getElementById('btn-enter').disabled=false; 
-    },50); 
-  }
-  show('s-pick');
-}
-function leaveLobby(){ 
-  if(ws) ws.send(JSON.stringify({type:'leave_lobby'}));
-  isKicked = true; 
-  if(ws) { try { ws.close(); } catch(e){} }
-  ws = null; 
-  show('s-profile'); 
-}
-function backToLobby(){ updateLobbyBadge(); show('s-lobby'); }
-document.getElementById('inp-name').addEventListener('keydown',e=>{if(e.key==='Enter')goPickBeast();});
+      <div style="font-size:9px;color:rgba(255,255,255,.5);margin-top:3px">${wins}V · ${losses}D
