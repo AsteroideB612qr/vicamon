@@ -383,7 +383,6 @@ function selectGauntletBeast(k) {
   document.getElementById('gbc-'+k)?.classList.add('sel');
 }
 
-// NUEVO: Rendirse
 function surrender() {
   if(!confirm('¿Estás seguro de rendirte? Si es una batalla de HP o Torre, perderás tu apuesta.')) return;
   if(ws && ws.readyState === 1) ws.send(JSON.stringify({type:'surrender', battleId}));
@@ -446,8 +445,8 @@ function handleMsg(m){
   }
   if(m.type==='battle_state'){
     const me=myRole==='p1'?m.p1:m.p2; const opp=myRole==='p1'?m.p2:m.p1;
-    myBeast = me.beast || myBeast; // NUEVO: Actualizar Vicamon en la UI
-    oppBeast = opp.beast || oppBeast; // NUEVO: Actualizar Jefe en la UI
+    myBeast = me.beast || myBeast; 
+    oppBeast = opp.beast || oppBeast; 
     const prevMyHp=mySt.hp, prevOppHp=oppSt.hp;
     mySt=me.state; oppSt=opp.state;
     if(mySt.hp<prevMyHp) animHit('me',prevMyHp-mySt.hp);
@@ -615,4 +614,85 @@ function renderLeaderboard(top) {
     return `<div style="flex:1;background:rgba(255,255,255,.04);border:0.5px solid ${colors[i]};border-radius:10px;padding:10px 6px;text-align:center;backdrop-filter:blur(4px)">
       <div style="font-size:20px;margin-bottom:2px">${medals[i] || '🏆'}</div>
       <div style="font-size:12px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</div>
-      <div style="font-size:9px;color:rgba(255,255,255,.5);margin-top:3px">${wins}V · ${losses}D
+      <div style="font-size:9px;color:rgba(255,255,255,.5);margin-top:3px">${wins}V · ${losses}D</div>
+    </div>`;
+  }).join('');
+}
+function renderBattle(yourTurn, logs){
+  document.getElementById('f-me').innerHTML=panelHTML(mySt,myBeast,myName+' (tú)','me');
+  document.getElementById('f-opp').innerHTML=panelHTML(oppSt,oppBeast,oppName,'opp');
+  const orb=document.getElementById('turn-orb'); if(orb) orb.style.display=yourTurn?'block':'none';
+  const locked=!yourTurn||mySt.stun||mySt.recharge>0;
+  let tb='';
+  if(yourTurn){
+    if(mySt.stun) tb='Estás aturdido — pierdes este turno';
+    else if(mySt.recharge>0) tb=`⚡ Recargando — espera ${mySt.recharge} turno(s)`;
+    else tb='<span>Tu turno</span> — elige un ataque';
+  } else tb='Turno del rival...';
+  document.getElementById('turn-bar').innerHTML=tb;
+
+  const b=BEASTS[myBeast];
+  document.getElementById('atk-grid').innerHTML=b.attacks.map((a,i)=>{
+    const tags=[];
+    if(a.pierce) tags.push('<span class="atk-tag tag-pierce">Ignora escudo</span>');
+    if(a.fx==='double') tags.push('<span class="atk-tag tag-nobreak">Doble golpe</span>');
+    if(a.fx==='triple') tags.push('<span class="atk-tag tag-nobreak">Triple golpe</span>');
+    if(a.risk||a.self>0) tags.push(`<span class="atk-tag tag-risk">Riesgo${a.self>0?' -'+a.self+' HP':''}</span>`);
+    if(a.buff) tags.push('<span class="atk-tag tag-buff">Buff</span>');
+    if(a.dot)  tags.push('<span class="atk-tag tag-dot">Daño/turno</span>');
+    if(a.debuff) tags.push('<span class="atk-tag tag-debuff">Debuff</span>');
+    
+    const currentPp = mySt.pp ? mySt.pp[i] : undefined;
+    const maxPp = a.pp === undefined ? 99 : a.pp;
+    const ppLeft = currentPp === undefined ? maxPp : currentPp;
+    const isDisabled = locked || ppLeft <= 0;
+    const ppText = maxPp === 99 ? '∞' : `${ppLeft}/${maxPp}`;
+    
+    return `<button class="atk-btn" ${isDisabled?'disabled':''} onclick="doAttack(${i})">
+      <div class="atk-top">
+        <div class="atk-name">${a.n}</div>
+        <div class="atk-dmg ${dmgClass(a)}">${dmgLabel(a)}</div>
+      </div>
+      <div class="atk-tags">${tags.join('')}</div>
+      <div class="atk-desc">${a.desc}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="atk-acc">${a.acc}% precisión</div>
+        <div class="atk-acc" style="color:rgba(255,255,255,.5)">PP: ${ppText}</div>
+      </div>
+    </button>`;
+  }).join('');
+
+  if(logs&&logs.length){
+    const lb=document.getElementById('log-box');
+    lb.innerHTML=logs.map(l=>`<div class="ll lc-${l.c||'normal'}">${l.t}</div>`).join('');
+    lb.scrollTop=lb.scrollHeight;
+  }
+}
+function doAttack(i){ 
+  animAttack('me'); 
+  try {
+    const atk = BEASTS[myBeast].attacks[i];
+    if(atk.d === 0) playSfx('curacion'); else playSfx('ataque');
+  } catch(e) { console.error("Audio error:", e); }
+  ws.send(JSON.stringify({type:'attack',battleId,index:i})); 
+}
+
+function goChangeBeast(){
+  buildPickGrid();
+  if(myBeast){ 
+    setTimeout(()=>{ 
+      document.getElementById('bc-'+myBeast)?.classList.add('sel'); 
+      document.getElementById('btn-enter').disabled=false; 
+    },50); 
+  }
+  show('s-pick');
+}
+function leaveLobby(){ 
+  if(ws) ws.send(JSON.stringify({type:'leave_lobby'}));
+  isKicked = true; 
+  if(ws) { try { ws.close(); } catch(e){} }
+  ws = null; 
+  show('s-profile'); 
+}
+function backToLobby(){ updateLobbyBadge(); show('s-lobby'); }
+document.getElementById('inp-name').addEventListener('keydown',e=>{if(e.key==='Enter')goPickBeast();});
