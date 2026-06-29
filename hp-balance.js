@@ -50,17 +50,15 @@ async function getTopPlayers(limit = 3) {
   return res.rows;
 }
 
-// NUEVO: Obtener victorias y derrotas de un jugador
 async function getPlayerStats(wallet) {
   const res = await pool.query('SELECT wins, losses FROM players WHERE wallet = $1', [wallet]);
   if (res.rows.length > 0) return res.rows[0];
   return { wins: 0, losses: 0 };
 }
 
-// NUEVO: Calcular el puesto global del jugador
 async function getPlayerRank(wallet) {
   const pRes = await pool.query('SELECT wins, losses FROM players WHERE wallet = $1', [wallet]);
-  if (pRes.rows.length === 0 || pRes.rows[0].wins === 0) return null; // No rankeado si tiene 0 victorias
+  if (pRes.rows.length === 0 || pRes.rows[0].wins === 0) return null;
   const { wins, losses } = pRes.rows[0];
   const rRes = await pool.query('SELECT COUNT(*) + 1 as rank FROM players WHERE wins > $1 OR (wins = $1 AND losses < $2)', [wins, losses]);
   return parseInt(rRes.rows[0].rank, 10);
@@ -135,6 +133,40 @@ async function settleMatch(winnerWallet, loserWallet, winnerHp) {
   }
 }
 
+// NUEVO: Econonomía para la Torre de Batalla (Gauntlet)
+async function settleGauntlet(wallet, won) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Liberar los 100 HP bloqueados del jugador
+    await client.query('UPDATE players SET locked_hp = GREATEST(0, locked_hp - 100) WHERE wallet = $1', [wallet]);
+    
+    if (won) {
+      // Si gana: recupera sus 100 HP + 100 HP de premio
+      await client.query('UPDATE players SET hp = hp + 200 WHERE wallet = $1', [wallet]);
+      // La plataforma pierde 100 HP
+      await client.query('UPDATE platform SET hp = GREATEST(0, hp - 100) WHERE id = 1');
+    } else {
+      // Si pierde: la plataforma se queda con los 100 HP
+      await client.query('UPDATE platform SET hp = hp + 100 WHERE id = 1');
+    }
+    
+    await client.query('COMMIT');
+    return await getHP(wallet);
+  } catch(e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// NUEVO: Estadísticas para Gauntlet (solo afecta al jugador)
+async function updateGauntletStats(wallet, won) {
+  if (won) await pool.query('UPDATE players SET wins = wins + 1 WHERE wallet = $1', [wallet]);
+  else await pool.query('UPDATE players SET losses = losses + 1 WHERE wallet = $1', [wallet]);
+}
+
 async function cashout(wallet) {
   const client = await pool.connect();
   try {
@@ -178,5 +210,6 @@ module.exports = {
   USDC_PER_HP,
   getAllPlayersDebug,
   updatePlayerName, updatePlayerStats, getTopPlayers,
-  getPlayerStats, getPlayerRank // NUEVO
+  getPlayerStats, getPlayerRank,
+  settleGauntlet, updateGauntletStats // NUEVO
 };
