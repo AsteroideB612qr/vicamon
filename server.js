@@ -25,20 +25,8 @@ const MIME = { '.html':'text/html', '.js':'application/javascript', '.css':'text
 
 const server = http.createServer(async (req, res) => {
   const urlPath = req.url.split('?')[0];
-
   if (urlPath === '/ver-db-secreta') { try { const players = await getAllPlayersDebug(); res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(players, null, 2)); } catch(e) { res.writeHead(500); res.end('Error leyendo DB'); } return; }
-  
-  // MODIFICADO: /hp ahora devuelve también las estadísticas para el perfil
-  if (urlPath === '/hp') { 
-    const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet') || ''; 
-    const hp = await getHP(wallet);
-    const stats = await getPlayerStats(wallet);
-    const rank = await getPlayerRank(wallet);
-    res.writeHead(200, { 'Content-Type': 'application/json' }); 
-    res.end(JSON.stringify({ hp, wallet, stats: { wins: stats.wins, losses: stats.losses, rank } })); 
-    return; 
-  }
-
+  if (urlPath === '/hp') { const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet') || ''; const hp = await getHP(wallet); const stats = await getPlayerStats(wallet); const rank = await getPlayerRank(wallet); res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ hp, wallet, stats: { wins: stats.wins, losses: stats.losses, rank } })); return; }
   if (urlPath === '/payment' && req.method === 'POST') {
     const secret = req.headers['x-internal-secret'];
     if (secret !== (process.env.INTERNAL_SECRET || 'dev-secret')) { res.writeHead(403); res.end(JSON.stringify({ error: 'Forbidden' })); return; }
@@ -58,7 +46,6 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
-
   const file = urlPath === '/' ? '/index.html' : urlPath;
   const fp = path.join(__dirname, file);
   fs.readFile(fp, (err, data) => { if (err) { res.writeHead(404); res.end('Not found'); return; } res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream' }); res.end(data); });
@@ -461,6 +448,19 @@ wss.on('connection', ws => {
       const b=battles.get(msg.battleId); if (!b) return;
       if (b.isCpu) await processCpuPlayerTurn(msg.battleId, id, msg.index);
       else await processTurn(msg.battleId, id, msg.index);
+    }
+
+    // NUEVO: Rendirse
+    if (msg.type==='surrender') {
+      const b = battles.get(msg.battleId); if (!b) return;
+      if (b.isGauntlet) {
+        await endGauntlet(msg.battleId, id, false);
+      } else if (b.isCpu) {
+        await endBattle(msg.battleId, CPU_ID, id, 0, true);
+      } else if (b.p1id === id || b.p2id === id) {
+        const otherId = b.p1id === id ? b.p2id : b.p1id;
+        await endBattle(msg.battleId, otherId, id, 0, true);
+      }
     }
 
     if (msg.type==='challenge_gauntlet') {
