@@ -1,3 +1,5 @@
+const GAUNTLET_HABILITADO = true; // Cambiar a false para desactivar la Torre de Batalla
+
 const EL={fuego:'#E8621A',tierra:'#7A9A3E',aire:'#4A9EFF',agua:'#2C6AA0'};
 const STCSS={agresivo:'background:rgba(216,90,48,.2);color:#F0997B',defensivo:'background:rgba(15,110,86,.2);color:#5DCAA5',tactico:'background:rgba(83,74,183,.2);color:#AFA9EC',equilibrado:'background:rgba(55,138,221,.2);color:#85B7EB',veneno:'background:rgba(83,150,40,.2);color:#9ECC5A',caos:'background:rgba(212,83,126,.2);color:#ED93B1',soporte:'background:rgba(130,80,180,.2);color:#CFA9EC'};
 
@@ -5,6 +7,8 @@ let ws=null, myId=null, myName='', myBeast='', myRole='', oppName='', oppBeast='
 let mySt={}, oppSt={}, pendingFrom=null, pendingIsTraining=false;
 let reconnectTimer=null, myWallet='', myCurrentHP=0, isKicked=false;
 let myStats = { wins: 0, losses: 0, rank: null };
+let gauntletBattleId = null;
+let gauntletSelectedBeast = null;
 
 // ── GESTOR DE AUDIO ──
 const audioFiles = {
@@ -18,7 +22,7 @@ audioFiles.lobby.loop = true; audioFiles.lobby.volume = 0.3;
 audioFiles.batalla.loop = true; audioFiles.batalla.volume = 0.3;
 let currentMusic = null;
 let isMuted = false;
-let challengeBeepInterval = null; // NUEVO: Controlador para la alarma de reto
+let challengeBeepInterval = null;
 
 function playMusic(track) {
     if (currentMusic === audioFiles[track]) return;
@@ -44,34 +48,29 @@ function toggleMute() {
         btn.textContent = '🔊';
     }
 }
-
-// NUEVO: Alarma de reto
 function startChallengeBeep() {
     if (challengeBeepInterval) return;
-    playSfx('boton'); // Sonar inmediatamente
-    challengeBeepInterval = setInterval(() => {
-        playSfx('boton');
-    }, 1500); // Repetir cada 1.5 segundos
+    playSfx('boton');
+    challengeBeepInterval = setInterval(() => { playSfx('boton'); }, 1500);
 }
 function stopChallengeBeep() {
-    if (challengeBeepInterval) {
-        clearInterval(challengeBeepInterval);
-        challengeBeepInterval = null;
-    }
+    if (challengeBeepInterval) { clearInterval(challengeBeepInterval); challengeBeepInterval = null; }
 }
-
 document.addEventListener('click', (e) => { if(e.target.closest('.btn')) playSfx('boton'); });
 // ── FIN GESTOR DE AUDIO ──
 
-// Desconectar Wallet
+// NUEVO: Ocultar o mostrar el botón de la Torre según el interruptor
+window.addEventListener('load', () => {
+    const btnG = document.getElementById('btn-gauntlet');
+    if (btnG) btnG.style.display = GAUNTLET_HABILITADO ? 'inline-block' : 'none';
+});
+
 async function disconnectWallet() {
   try {
     const phantom = getPhantom();
     if (phantom && phantom.isConnected) await phantom.disconnect();
   } catch(e) {}
-  myWallet = '';
-  myName = '';
-  myBeast = '';
+  myWallet = ''; myName = ''; myBeast = '';
   if(ws) { try { ws.close(); } catch(e){} }
   document.getElementById('btn-phantom').style.display='flex';
   document.getElementById('wallet-connected').style.display='none';
@@ -174,7 +173,6 @@ async function checkHPNow(fromConnect=false) {
   } catch(e) { document.getElementById('wallet-hp').textContent = 'Error al verificar'; }
 }
 
-// Actualizar la interfaz del perfil
 function updateProfileUI(stats) {
   if (stats) myStats = stats;
   const nameEl = document.getElementById('profile-name');
@@ -370,6 +368,27 @@ function connectWS(){
   ws = localWs;
 }
 
+// NUEVO: Iniciar Torre de Batalla
+function challengeGauntlet() {
+  if(!confirm('¿Iniciar la Torre de Batalla? Apostarás 100 HP. Si derrotas a los 12 Vicamons, ganarás 100 HP extra. Si caes, perderás tus 100 HP.')) return;
+  ws.send(JSON.stringify({type:'challenge_gauntlet'}));
+}
+
+// NUEVO: Continuar al siguiente jefe en la Torre
+function continueGauntlet() {
+  document.getElementById('modal-gauntlet').classList.add('hidden');
+  const beastToUse = gauntletSelectedBeast || myBeast;
+  ws.send(JSON.stringify({type:'gauntlet_continue', battleId: gauntletBattleId, beast: beastToUse}));
+  myBeast = beastToUse; // Actualizar mi beast localmente
+}
+
+// NUEVO: Seleccionar beast en el modal de Gauntlet
+function selectGauntletBeast(k) {
+  gauntletSelectedBeast = k;
+  document.querySelectorAll('#g-beast-picker .bcard').forEach(c=>c.classList.remove('sel'));
+  document.getElementById('gbc-'+k)?.classList.add('sel');
+}
+
 function handleMsg(m){
   if(m.type==='joined'){ 
     myId=m.id; 
@@ -383,6 +402,32 @@ function handleMsg(m){
   if(m.type==='lobby'){ const others=m.players.filter(p=>p.id!==myId); document.getElementById('lbl-online').textContent=m.players.length; renderLobby(others); }
   if(m.type==='leaderboard_update'){ renderLeaderboard(m.top); }
   if(m.type==='chat_message'){ handleChatMessage(m); }
+  
+  // NUEVO: Manejar transición de jefes en la Torre
+  if(m.type==='gauntlet_next'){
+    gauntletBattleId = m.battleId;
+    gauntletSelectedBeast = myBeast; // Por defecto, el actual
+    
+    const b = BEASTS[m.nextBeast];
+    document.getElementById('g-title').textContent = `¡Jefe ${m.round}/12 derrotado!`;
+    document.getElementById('g-sub').innerHTML = `Tu HP se ha restaurado a 100.<br>El próximo rival es <strong style="color:#CFA9EC">${b.name}</strong>.<br>¿Quieres cambiar de Vicamon?`;
+    
+    // Poblar el mini-grid de beasts
+    const picker = document.getElementById('g-beast-picker');
+    picker.innerHTML = Object.entries(BEASTS).map(([k,b])=>`
+      <div class="bcard" id="gbc-${k}" style="padding:5px" onclick="selectGauntletBeast('${k}')">
+        <img src="${b.img}" alt="${b.name}" style="width:50px;height:50px">
+        <div class="bname" style="font-size:10px">${b.name}</div>
+      </div>
+    `).join('');
+    
+    // Marcar el beast actual
+    document.getElementById('gbc-'+myBeast)?.classList.add('sel');
+    
+    document.getElementById('modal-gauntlet').classList.remove('hidden');
+    return;
+  }
+  
   if(m.type==='challenged'){
     pendingFrom=m.fromId; pendingIsTraining = !!m.isTraining;
     const b=BEASTS[m.fromBeast]||{name:m.fromBeast,img:''};
@@ -390,13 +435,14 @@ function handleMsg(m){
     document.getElementById('ch-title').textContent=`¡Reto de ${m.fromName}!`;
     document.getElementById('ch-sub').textContent=pendingIsTraining ? `${m.fromName} quiere un ENTRENAMIENTO con su ${b.name}. (Sin apostar HP)` : `${m.fromName} quiere batallar con su ${b.name}. ¿Aceptas el combate?`;
     document.getElementById('modal-challenged').classList.remove('hidden');
-    startChallengeBeep(); // NUEVO: Iniciar alarma
+    startChallengeBeep();
   }
   if(m.type==='battle_start'){
     battleId=m.battleId; myRole=m.role; oppName=m.opponent; oppBeast=m.opponentBeast;
     const empty={hp:100,maxHp:100,poisonDmg:0,poisonTurns:0,burnDmg:0,burnTurns:0,shield:0,shieldReflect:0,reflect50:0,stun:false,recharge:0,regen:0,regenTurns:0,blind:0,weakAtk:0,weaken:0,corrode:0,analyzed:0,lastDmgReceived:0,pp:[]};
     mySt={...empty}; oppSt={...empty};
     window._isCpuBattle=!!m.isCpu; window._isTrainingBattle=!!m.isTraining;
+    window._isGauntlet=!!m.isGauntlet; // NUEVO
     const isCpu=!!m.isCpu; const isTraining=!!m.isTraining;
     let startMsg='';
     if(isTraining) startMsg = `¡Entrenamiento amistoso! ${myName} (${BEASTS[myBeast]?.name}) vs ${oppName} (${BEASTS[oppBeast]?.name})`;
@@ -423,16 +469,58 @@ function handleMsg(m){
   if(m.type==='payout_ok'){ const el=document.getElementById('r-payout-status'); if(el){ el.innerHTML=`<span style="color:#5DCAA5">✓ ${m.usdc} USDC enviados a tu wallet</span><br><a href="https://solscan.io/tx/${m.tx}" target="_blank" style="font-size:10px;color:#4a9eff">Ver transacción en Solscan ↗</a>`; } }
   if(m.type==='payout_error'){ const el=document.getElementById('r-payout-status'); if(el){ if(m.reason==='insufficient_funds'){ el.innerHTML=`<span style="color:#F0997B">⚠ Error: fondos insuficientes en la plataforma (${m.available} USDC disponibles, necesita ${m.needed} USDC). Contacta al administrador.</span>`; } else { el.innerHTML=`<span style="color:#F0997B">⚠ Error al procesar el pago. Contacta al administrador.</span>`; } } }
   if(m.type==='battle_end'){
-    const won=m.won; const isCpuResult=m.isCpu||window._isCpuBattle||oppName==='Zodiac Master'; const isTrainingResult=m.isTraining||window._isTrainingBattle;
+    const won=m.won; 
+    const isCpuResult=m.isCpu||window._isCpuBattle||oppName==='Zodiac Master'; 
+    const isTrainingResult=m.isTraining||window._isTrainingBattle;
+    const isGauntletResult=m.isGauntlet||window._isGauntlet; // NUEVO
     const winnerHp=m.winnerHp||0; const newHp=m.newHp||0;
     
     if(m.stats) updateProfileUI(m.stats);
     
     show('s-result');
     if(!isCpuResult && !isTrainingResult) updateHPDisplay(newHp);
+    if(isGauntletResult) updateHPDisplay(newHp); // NUEVO: Actualizar HP en Gauntlet
+    
     const b1=BEASTS[myBeast],b2=BEASTS[oppBeast];
     let resultBody='';
-    if(isTrainingResult){
+    
+    // NUEVO: Cuerpo de resultado para Gauntlet
+    if(isGauntletResult){
+      if(won){
+        resultBody=`<div style="background:rgba(246, 226, 102, 0.1);border:0.5px solid rgba(246, 226, 102, 0.3);border-radius:10px;padding:14px;margin:14px 0;text-align:left">
+          <div style="font-size:11px;color:#F6E266;margin-bottom:10px;text-transform:uppercase;letter-spacing:.08em">¡Torre de Batalla Completada!</div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+            <span style="font-size:13px;color:rgba(255,255,255,.6)">Apuesta devuelta</span>
+            <span style="font-size:13px;color:#5DCAA5;font-weight:600">+100 HP</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+            <span style="font-size:13px;color:rgba(255,255,255,.6)">Premio por derrotar a los 12</span>
+            <span style="font-size:13px;color:#5DCAA5;font-weight:600">+100 HP</span>
+          </div>
+          <div style="border-top:0.5px solid rgba(255,255,255,.1);margin:10px 0"></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+            <span style="font-size:13px;font-weight:600;color:#fff">Tu HP ahora</span>
+            <span style="font-size:15px;font-weight:700;color:#5DCAA5">${newHp} HP</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="font-size:11px;color:rgba(255,255,255,.35)">Equivalente en USDC</span>
+            <span style="font-size:11px;color:rgba(255,255,255,.35)">${(newHp*0.001).toFixed(3)} USDC</span>
+          </div>
+        </div>`;
+      } else {
+        resultBody=`<div style="background:rgba(255,255,255,.05);border-radius:10px;padding:14px;margin:14px 0;text-align:left">
+          <div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:10px;text-transform:uppercase;letter-spacing:.08em">Torre de Batalla Fallida</div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+            <span style="font-size:13px;color:rgba(255,255,255,.6)">HP apostados perdidos</span>
+            <span style="font-size:13px;color:#F0997B;font-weight:600">-100 HP</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+            <span style="font-size:13px;color:rgba(255,255,255,.6)">Tu HP ahora</span>
+            <span style="font-size:13px;color:#F0997B;font-weight:600">${newHp} HP</span>
+          </div>
+        </div>`;
+      }
+    } else if(isTrainingResult){
       const xpWon = won ? (m.winnerXp||0) : (m.loserXp||0);
       resultBody=`<div style="background:rgba(130,80,180,.08);border:0.5px solid rgba(130,80,180,.2);border-radius:10px;padding:14px;margin:14px 0;text-align:left"><div style="font-size:11px;color:#CFA9EC;margin-bottom:10px;text-transform:uppercase;letter-spacing:.08em">Modo Entrenamiento</div><div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-size:13px;color:rgba(255,255,255,.6)">Experiencia obtenida</span><span style="font-size:13px;color:#CFA9EC;font-weight:600">+${xpWon} XP</span></div><div style="font-size:11px;color:rgba(255,255,255,.35);margin-top:8px;text-align:center">Sin riesgo de HP · Solo por diversión</div></div>`;
     } else if(isCpuResult){
@@ -442,7 +530,11 @@ function handleMsg(m){
     } else {
       resultBody=`<div style="background:rgba(255,255,255,.05);border-radius:10px;padding:14px;margin:14px 0;text-align:left"><div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:10px;text-transform:uppercase;letter-spacing:.08em">Resultado</div><div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-size:13px;color:rgba(255,255,255,.6)">HP bloqueados perdidos</span><span style="font-size:13px;color:#F0997B;font-weight:600">-100 HP</span></div><div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-size:13px;color:rgba(255,255,255,.6)">Tu HP ahora</span><span style="font-size:13px;color:#F0997B;font-weight:600">${newHp} HP</span></div><div style="display:flex;justify-content:space-between"><span style="font-size:11px;color:rgba(255,255,255,.35)">Equivalente</span><span style="font-size:11px;color:rgba(255,255,255,.35)">${(newHp*0.001).toFixed(3)} USDC</span></div></div>`;
     }
-    document.getElementById('result-box').innerHTML=`<div style="display:flex;justify-content:center;gap:20px;margin-bottom:16px;align-items:center"><img src="${b1?.img||''}" style="width:80px;height:80px;object-fit:contain;image-rendering:pixelated;filter:${won?'none':'grayscale(1) opacity(.4)'}"><div style="font-size:20px;color:rgba(255,255,255,.25)">VS</div><img src="${b2?.img||''}" style="width:80px;height:80px;object-fit:contain;image-rendering:pixelated;transform:scaleX(-1);filter:${won?'grayscale(1) opacity(.4)':'none'}"></div><div class="r-icon">${won?'&#127942;':'&#128128;'}</div><div class="r-title">${won?(m.forfeit?'&#161;Rival abandon&#243;!':'&#161;Victoria!'):'Derrota'}</div><div class="r-sub">${myName} &#183; ${b1?.name} vs ${oppName} &#183; ${b2?.name}</div>${resultBody}<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${!isCpuResult&&!isTrainingResult&&newHp>0?`<button class="btn btn-sm" style="background:rgba(239,159,39,.15);border-color:rgba(239,159,39,.4);color:#EF9F27" onclick="show('s-pick');buildPickGrid()">&#128176; Hacer Cashout</button>`:''}<button class="btn btn-blue" onclick="backToLobby()">Volver al lobby</button></div>`;
+    
+    const icon = isGauntletResult ? (won ? '👑' : '💀') : (won ? '🏆' : '💀');
+    const title = isGauntletResult ? (won ? '¡TORRE COMPLETADA!' : 'Has caído en la Torre') : (won ? (m.forfeit?'¡Rival abandonó!':'¡Victoria!') : 'Derrota');
+    
+    document.getElementById('result-box').innerHTML=`<div style="display:flex;justify-content:center;gap:20px;margin-bottom:16px;align-items:center"><img src="${b1?.img||''}" style="width:80px;height:80px;object-fit:contain;image-rendering:pixelated;filter:${won?'none':'grayscale(1) opacity(.4)'}"><div style="font-size:20px;color:rgba(255,255,255,.25)">VS</div><img src="${b2?.img||''}" style="width:80px;height:80px;object-fit:contain;image-rendering:pixelated;transform:scaleX(-1);filter:${won?'grayscale(1) opacity(.4)':'none'}"></div><div class="r-icon">${icon}</div><div class="r-title">${title}</div><div class="r-sub">${myName} &#183; ${b1?.name} vs ${oppName} &#183; ${b2?.name}</div>${resultBody}<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${!isCpuResult&&!isTrainingResult&&!isGauntletResult&&newHp>0?`<button class="btn btn-sm" style="background:rgba(239,159,39,.15);border-color:rgba(239,159,39,.4);color:#EF9F27" onclick="show('s-pick');buildPickGrid()">&#128176; Hacer Cashout</button>`:''}<button class="btn btn-blue" onclick="backToLobby()">Volver al lobby</button></div>`;
   }
 }
 function animHit(side, dmg){
@@ -504,13 +596,13 @@ function sendChallengeTraining(targetId,name){ if(confirm(`¿Retar a ${name} a u
 function challengeMaster(){ ws.send(JSON.stringify({type:'challenge_cpu'})); }
 function acceptChallenge(){
   document.getElementById('modal-challenged').classList.add('hidden');
-  stopChallengeBeep(); // NUEVO: Detener alarma
+  stopChallengeBeep();
   if(pendingFrom!==null) ws.send(JSON.stringify({type:'accept',fromId:pendingFrom, isTraining: pendingIsTraining}));
   pendingIsTraining=false; pendingFrom=null;
 }
 function rejectChallenge(){ 
   document.getElementById('modal-challenged').classList.add('hidden'); 
-  stopChallengeBeep(); // NUEVO: Detener alarma
+  stopChallengeBeep();
   pendingFrom=null; pendingIsTraining=false; 
 }
 function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
