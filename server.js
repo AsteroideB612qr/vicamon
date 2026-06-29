@@ -27,7 +27,17 @@ const server = http.createServer(async (req, res) => {
   const urlPath = req.url.split('?')[0];
 
   if (urlPath === '/ver-db-secreta') { try { const players = await getAllPlayersDebug(); res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(players, null, 2)); } catch(e) { res.writeHead(500); res.end('Error leyendo DB'); } return; }
-  if (urlPath === '/hp') { const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet') || ''; res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ hp: await getHP(wallet), wallet })); return; }
+  
+  // MODIFICADO: /hp ahora devuelve también las estadísticas para el perfil
+  if (urlPath === '/hp') { 
+    const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet') || ''; 
+    const hp = await getHP(wallet);
+    const stats = await getPlayerStats(wallet);
+    const rank = await getPlayerRank(wallet);
+    res.writeHead(200, { 'Content-Type': 'application/json' }); 
+    res.end(JSON.stringify({ hp, wallet, stats: { wins: stats.wins, losses: stats.losses, rank } })); 
+    return; 
+  }
 
   if (urlPath === '/payment' && req.method === 'POST') {
     const secret = req.headers['x-internal-secret'];
@@ -200,7 +210,6 @@ async function endBattle(bId, winnerId, loserId, winnerHp, forfeit=false) {
   await pushLobby();
 }
 
-// CORREGIDO: CheckCpuDeath ahora muestra el golpe final antes de avanzar
 async function checkCpuDeath(bId) {
   const b=battles.get(bId); if (!b) return false;
   const cpuSt=b.cpuIsP1?b.st1:b.st2;
@@ -209,7 +218,7 @@ async function checkCpuDeath(bId) {
   
   if (cpuSt.hp<=0) {
     if (b.isGauntlet) {
-      pushCpuBattle(bId); // Enviar el golpe final a la pantalla
+      pushCpuBattle(bId); 
       setTimeout(() => {
         const bb = battles.get(bId); if (!bb) return;
         bb.gauntletIndex++;
@@ -225,7 +234,7 @@ async function checkCpuDeath(bId) {
           bb.logs.push({t:`¡Jefe derrotado! Prepárate para ${BEASTS[bb.cpuBeast].name} (${bb.gauntletIndex+1}/12). HP restaurado.`, c:'good'});
           send(pl.ws, { type: 'gauntlet_next', battleId: bId, nextBeast: bb.cpuBeast, round: bb.gauntletIndex+1, logs: bb.logs.slice(-14) });
         }
-      }, 1500); // 1.5 segundos de pausa para ver la victoria
+      }, 1500); 
       return true;
     } else {
       await endBattle(bId, plId, CPU_ID, Math.max(0,plSt.hp)); return true;
