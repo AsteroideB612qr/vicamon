@@ -146,7 +146,7 @@ async function endGauntlet(bId, playerId, won) {
   if (!pl) return;
   const wallet = pl.wallet;
   const newHp = await settleGauntlet(wallet, won);
-  await updateGauntletStats(wallet, won);
+  // Se elimina updateGauntletStats para que no afecte el ranking PvP
   const stats = await getPlayerStats(wallet);
   const rank = await getPlayerRank(wallet);
   send(pl.ws, { type:'battle_end', won, isGauntlet: true, newHp, stats: { wins: stats.wins, losses: stats.losses, rank } });
