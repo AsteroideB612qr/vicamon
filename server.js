@@ -7,7 +7,7 @@ const {
   getPlatformHp, getPlatformUsdc, clearPlatformHp,
   PLATFORM_WALLET, PLATFORM_THRESHOLD, USDC_PER_HP,
   getAllPlayersDebug, updatePlayerName, updatePlayerStats, getTopPlayers,
-  getPlayerStats, getPlayerRank, settleGauntlet, updateGauntletStats // NUEVO
+  getPlayerStats, getPlayerRank, settleGauntlet, updateGauntletStats
 } = require('./hp-balance');
 const { sendUSDC } = require('./transfer');
 const BEASTS = require('./beasts.js');
@@ -82,7 +82,7 @@ async function checkPlatformTransfer() {
 
 function newState() { return { hp:100, maxHp:100, poisonDmg:0, poisonTurns:0, burnDmg:0, burnTurns:0, shield:0, shieldReflect:0, reflect50:0, stun:false, recharge:0, regen:0, regenTurns:0, blind:0, weakAtk:0, weaken:0, corrode:0, analyzed:0, lastDmgReceived:0, pp:[] }; }
 function getStartState(beastKey) { const st = newState(); const beast = BEASTS[beastKey]; if (beast) { st.pp = beast.attacks.map(a => a.pp === undefined ? 99 : a.pp); } else { st.pp = [99, 99, 99, 99]; } return st; }
-function applyAtk(aSt, dSt, atk, aName) { /* ... código intacto de applyAtk ... */ 
+function applyAtk(aSt, dSt, atk, aName) { 
   const logs = []; const blind = aSt.blind > 0 ? 30 : 0; const weakMul = aSt.weakAtk > 0 ? 0.8 : 1; const anaMul = aSt.analyzed > 0 ? 1.15 : 1; const fx = atk.fx;
   if (fx==='shield2') { aSt.shield=2; aSt.shieldReflect=0; logs.push({t:`${aName} activa Escudo ×2`,c:'good'}); return logs; }
   if (fx==='shield1r') { aSt.shield=1; aSt.shieldReflect=15; logs.push({t:`${aName} activa Escudo Lunar`,c:'good'}); return logs; }
@@ -143,25 +143,19 @@ function tickEffects(st, name) {
   return logs;
 }
 
-// NUEVO: Función especial para terminar el Gauntlet
 async function endGauntlet(bId, playerId, won) {
   const b = battles.get(bId);
   const pl = lobby.get(playerId);
   if (!pl) return;
-  
   const wallet = pl.wallet;
   const newHp = await settleGauntlet(wallet, won);
   await updateGauntletStats(wallet, won);
-  
   const stats = await getPlayerStats(wallet);
   const rank = await getPlayerRank(wallet);
-  
   send(pl.ws, { type:'battle_end', won, isGauntlet: true, newHp, stats: { wins: stats.wins, losses: stats.losses, rank } });
-  
   pl.inBattle = false;
   battles.delete(bId);
   await pushLobby();
-  
   const top = await getTopPlayers(3);
   broadcast({ type: 'leaderboard_update', top });
 }
@@ -206,7 +200,7 @@ async function endBattle(bId, winnerId, loserId, winnerHp, forfeit=false) {
   await pushLobby();
 }
 
-// NUEVO: CheckCpuDeath modificado para detectar el modo Gauntlet
+// CORREGIDO: CheckCpuDeath ahora muestra el golpe final antes de avanzar
 async function checkCpuDeath(bId) {
   const b=battles.get(bId); if (!b) return false;
   const cpuSt=b.cpuIsP1?b.st1:b.st2;
@@ -215,29 +209,32 @@ async function checkCpuDeath(bId) {
   
   if (cpuSt.hp<=0) {
     if (b.isGauntlet) {
-      b.gauntletIndex++;
-      if (b.gauntletIndex >= BEAST_KEYS.length) {
-        // Venció a los 12
-        await endGauntlet(bId, plId, true);
-        return true;
-      } else {
-        // Siguiente jefe
-        const pl = lobby.get(plId);
-        b.cpuBeast = BEAST_KEYS[b.gauntletIndex];
-        b.st1 = getStartState(b.cpuBeast);
-        b.st2 = getStartState(pl.beast); // Recupera HP y PP
-        b.turnId = CPU_ID;
-        b.logs.push({t:`¡Jefe derrotado! Prepárate para ${BEASTS[b.cpuBeast].name} (${b.gauntletIndex+1}/12). HP restaurado.`, c:'good'});
-        send(pl.ws, { type: 'gauntlet_next', battleId: bId, nextBeast: b.cpuBeast, round: b.gauntletIndex+1, logs: b.logs.slice(-14) });
-        return true; // Pausa la batalla, espera a que el cliente envíe 'gauntlet_continue'
-      }
+      pushCpuBattle(bId); // Enviar el golpe final a la pantalla
+      setTimeout(() => {
+        const bb = battles.get(bId); if (!bb) return;
+        bb.gauntletIndex++;
+        if (bb.gauntletIndex >= BEAST_KEYS.length) {
+          endGauntlet(bId, plId, true);
+        } else {
+          const pl = lobby.get(plId);
+          if (!pl) return endGauntlet(bId, plId, false);
+          bb.cpuBeast = BEAST_KEYS[bb.gauntletIndex];
+          bb.st1 = getStartState(bb.cpuBeast);
+          bb.st2 = getStartState(pl.beast);
+          bb.turnId = CPU_ID;
+          bb.logs.push({t:`¡Jefe derrotado! Prepárate para ${BEASTS[bb.cpuBeast].name} (${bb.gauntletIndex+1}/12). HP restaurado.`, c:'good'});
+          send(pl.ws, { type: 'gauntlet_next', battleId: bId, nextBeast: bb.cpuBeast, round: bb.gauntletIndex+1, logs: bb.logs.slice(-14) });
+        }
+      }, 1500); // 1.5 segundos de pausa para ver la victoria
+      return true;
     } else {
       await endBattle(bId, plId, CPU_ID, Math.max(0,plSt.hp)); return true;
     }
   }
   if (plSt.hp<=0) {
     if (b.isGauntlet) {
-      await endGauntlet(bId, plId, false);
+      pushCpuBattle(bId);
+      setTimeout(() => endGauntlet(bId, plId, false), 1500);
     } else {
       await endBattle(bId, CPU_ID, plId, Math.max(0,cpuSt.hp));
     }
@@ -457,40 +454,27 @@ wss.on('connection', ws => {
       else await processTurn(msg.battleId, id, msg.index);
     }
 
-    // NUEVO: Iniciar Torre de Batalla
     if (msg.type==='challenge_gauntlet') {
       const pl=lobby.get(id);
       if (!pl||pl.inBattle) return;
       if (!await hasHP(pl.wallet,100)) { send(ws,{type:'error',msg:'Necesitas al menos 100 HP para entrar a la Torre de Batalla.'}); return; }
-      
       await lockHP(pl.wallet,100);
       pl.inBattle=true;
-      
-      const cpuBeast=BEAST_KEYS[0]; // Empieza con el primer signo
+      const cpuBeast=BEAST_KEYS[0];
       const bId=`bgauntlet${uid()}`;
-      battles.set(bId,{
-        p1id:CPU_ID, p2id:id, 
-        st1:getStartState(cpuBeast), st2:getStartState(pl.beast), 
-        turnId:CPU_ID, 
-        logs:[{t:`¡Torre de Batalla iniciada! ${pl.name} vs Aries (1/12)`,c:'hi'}], 
-        isCpu:true, isGauntlet:true, gauntletIndex:0, cpuIsP1:true, cpuBeast
-      });
-      
+      battles.set(bId,{p1id:CPU_ID, p2id:id, st1:getStartState(cpuBeast), st2:getStartState(pl.beast), turnId:CPU_ID, logs:[{t:`¡Torre de Batalla iniciada! ${pl.name} vs Aries (1/12)`,c:'hi'}], isCpu:true, isGauntlet:true, gauntletIndex:0, cpuIsP1:true, cpuBeast});
       send(ws,{type:'battle_start',battleId:bId,role:'p2',opponent:CPU_NAME,opponentBeast:cpuBeast,isCpu:true,isGauntlet:true});
       await pushLobby();
       setTimeout(()=>{ pushCpuBattle(bId); scheduleCpuTurn(bId); },200);
     }
 
-    // NUEVO: Continuar al siguiente jefe
     if (msg.type==='gauntlet_continue') {
       const b=battles.get(msg.battleId); if (!b||!b.isGauntlet) return;
       const pl=lobby.get(id);
-      if (msg.beast) pl.beast = msg.beast; // Cambiar de Vicamon
-      
-      b.st2 = getStartState(pl.beast); // Resetear estados del jugador
-      b.st1 = getStartState(b.cpuBeast); // Resetear estados del CPU
-      b.turnId = CPU_ID; // CPU empieza
-      
+      if (msg.beast) pl.beast = msg.beast;
+      b.st2 = getStartState(pl.beast);
+      b.st1 = getStartState(b.cpuBeast);
+      b.turnId = CPU_ID;
       pushCpuBattle(bId);
       scheduleCpuTurn(bId);
     }
@@ -545,7 +529,7 @@ wss.on('connection', ws => {
     const p=lobby.get(id); if (!p) return;
     for (const [bId, b] of battles) {
       if (b.isTraining && (b.p1id===id||b.p2id===id)) { battles.delete(bId); } 
-      else if (b.isGauntlet && b.p2id===id) { await endGauntlet(bId, id, false); } // NUEVO: Desconectarse en Gauntlet = Derrota
+      else if (b.isGauntlet && b.p2id===id) { await endGauntlet(bId, id, false); } 
       else if (b.isCpu && b.p2id===id) { battles.delete(bId); } 
       else if (b.p1id===id||b.p2id===id) {
         const otherId=b.p1id===id?b.p2id:b.p1id;
