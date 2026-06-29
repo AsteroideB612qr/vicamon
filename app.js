@@ -1,4 +1,4 @@
-const GAUNTLET_HABILITADO = false; // Cambiar a false para desactivar la Torre de Batalla
+const GAUNTLET_HABILITADO = true; // Cambiar a false para desactivar la Torre de Batalla
 
 const EL={fuego:'#E8621A',tierra:'#7A9A3E',aire:'#4A9EFF',agua:'#2C6AA0'};
 const STCSS={agresivo:'background:rgba(216,90,48,.2);color:#F0997B',defensivo:'background:rgba(15,110,86,.2);color:#5DCAA5',tactico:'background:rgba(83,74,183,.2);color:#AFA9EC',equilibrado:'background:rgba(55,138,221,.2);color:#85B7EB',veneno:'background:rgba(83,150,40,.2);color:#9ECC5A',caos:'background:rgba(212,83,126,.2);color:#ED93B1',soporte:'background:rgba(130,80,180,.2);color:#CFA9EC'};
