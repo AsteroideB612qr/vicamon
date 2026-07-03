@@ -41,7 +41,20 @@ function applyAtk(aSt, dSt, atk, aName) {
   if (fx==='purify') { aSt.poisonTurns=aSt.burnTurns=aSt.blind=aSt.weakAtk=aSt.weaken=0; aSt.stun=false; aSt.hp=Math.min(aSt.maxHp,aSt.hp+15); logs.push({t:`${aName} se purifica +15 HP`,c:'good'}); return logs; }
   if (fx==='weaken') { dSt.weaken=2; logs.push({t:`${aName} debilita al rival`,c:'special'}); return logs; }
   if (fx==='counter') { const h=aSt.lastDmgReceived||0; aSt.hp=Math.min(aSt.maxHp,aSt.hp+h); logs.push({t:`${aName} usa Contrapeso: +${h} HP`,c:'good'}); return logs; }
-  if (fx==='swap') { const tp=dSt.stun; dSt.stun=aSt.stun; aSt.stun=tp; logs.push({t:`${aName} intercambia estados`,c:'special'}); return logs; }
+  
+  // CORRECCIÓN: Bug de Géminis arreglado - Ahora intercambia TODOS los estados negativos
+  if (fx==='swap') { 
+    const propsToSwap = ['stun', 'poisonDmg', 'poisonTurns', 'burnDmg', 'burnTurns', 'blind', 'weakAtk', 'weaken', 'corrode'];
+    propsToSwap.forEach(prop => {
+      const temp = dSt[prop];
+      dSt[prop] = aSt[prop];
+      aSt[prop] = temp;
+    });
+    logs.push({t:`${aName} intercambia estados negativos con el rival`,c:'special'}); 
+    return logs; 
+  }
+  // FIN CORRECCIÓN
+
   if (fx==='equalize') { const diff=Math.abs(aSt.hp-dSt.hp); dSt.hp=Math.max(0,dSt.hp-diff); logs.push({t:`${aName} → Equilibrio: ${diff} HP`,c:'bad'}); return logs; }
   if (fx==='chaos'||fx==='chaosHi') { if (Math.random()*100 >= atk.acc-blind) { logs.push({t:`${aName} → ¡falló!`,c:'bad'}); return logs; } const dmg=fx==='chaosHi'?Math.floor(Math.random()*36)+10:Math.floor(Math.random()*36)+5; dSt.hp=Math.max(0,dSt.hp-dmg); logs.push({t:`${aName} → Caos: ${dmg} HP`,c:'bad'}); return logs; }
   
@@ -126,7 +139,6 @@ async function endBattle(bId, winnerId, loserId, winnerHp, forfeit=false) {
     const lRank = await getPlayerRank(loserWallet);
     const winnerUsdc = parseFloat(((100 + hp) * USDC_PER_HP).toFixed(3));
     const platformUsdc = parseFloat(((100 - hp) * USDC_PER_HP).toFixed(3));
-    // CORRECCIÓN: Se envía explícitamente isCpu: false e isTraining: false
     if(winner) winner.ws.send(JSON.stringify({ type:'battle_end', won:true, isCpu:false, isTraining:false, winnerHp:hp, winnerUsdc, platformUsdc, newHp: result.winnerNewHp, forfeit, stats: { wins: wStats.wins, losses: wStats.losses, rank: wRank } }));
     if(loser) loser.ws.send(JSON.stringify({ type:'battle_end', won:false, isCpu:false, isTraining:false, winnerHp:hp, winnerUsdc, platformUsdc, newHp: await getHP(loserWallet), stats: { wins: lStats.wins, losses: lStats.losses, rank: lRank } }));
     const top = await getTopPlayers(3);
