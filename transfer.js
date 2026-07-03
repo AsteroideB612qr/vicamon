@@ -29,14 +29,22 @@ async function getWorkingConnection() {
   return new Connection(RPCS[0], 'confirmed');
 }
 
-const connection = new Connection(RPCS[0], 'confirmed');
-
-function loadPlatformWallet() {
+// CORRECCIÓN: Función async para poder importar bs58 de forma dinámica
+async function loadPlatformWallet() {
   // 1. Si estamos en la nube (Render), usar la variable de entorno secreta
-  if (process.env.PLATFORM_WALLET_SECRET) {
+  const secretEnv = process.env.PLATFORM_WALLET_SECRET;
+  if (secretEnv) {
     try {
-      const secret = JSON.parse(process.env.PLATFORM_WALLET_SECRET);
-      return Keypair.fromSecretKey(Uint8Array.from(secret));
+      // Si es un arreglo (formato antiguo)
+      if (secretEnv.startsWith('[')) {
+        const secret = JSON.parse(secretEnv);
+        return Keypair.fromSecretKey(Uint8Array.from(secret));
+      }
+      // Si es texto (formato nuevo Base58 de Phantom)
+      // Importamos bs58 dinámicamente porque la versión 6 es ESM y da error con require()
+      const bs58 = (await import('bs58')).default;
+      const secretKey = bs58.decode(secretEnv);
+      return Keypair.fromSecretKey(secretKey);
     } catch(e) {
       console.error("Error leyendo la wallet desde variables de entorno:", e.message);
       throw e;
@@ -48,7 +56,7 @@ function loadPlatformWallet() {
 }
 
 async function sendUSDC(toWalletAddress, amountUSDC) {
-  const platform    = loadPlatformWallet();
+  const platform    = await loadPlatformWallet(); // Ahora esperamos a que cargue
   const toPublicKey = new PublicKey(toWalletAddress);
   const amount      = Math.round(amountUSDC * Math.pow(10, DECIMALS));
   const conn        = await getWorkingConnection();
