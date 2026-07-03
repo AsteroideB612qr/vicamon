@@ -44,9 +44,13 @@ function startChallengeBeep() { if (challengeBeepInterval) return; playSfx('boto
 function stopChallengeBeep() { if (challengeBeepInterval) { clearInterval(challengeBeepInterval); challengeBeepInterval = null; } }
 document.addEventListener('click', (e) => { if(e.target.closest('.btn')) playSfx('boton'); });
 
+// CAMBIO 1: Botón de torre arranca deshabilitado hasta saber el HP
 window.addEventListener('load', () => { 
   const btnG = document.getElementById('btn-gauntlet'); 
-  if (btnG) btnG.style.display = GAUNTLET_HABILITADO ? 'inline-block' : 'none'; 
+  if (btnG) {
+    btnG.style.display = GAUNTLET_HABILITADO ? 'inline-block' : 'none'; 
+    btnG.disabled = true; // Deshabilitado por defecto al cargar
+  }
   fetchPlatformWallet(); 
 });
 
@@ -177,7 +181,6 @@ function goProfile(){
   checkHPNow(false); 
   const profWidget = document.getElementById('profile-deposit-widget'); 
   if(profWidget) profWidget.innerHTML = depositWidgetHTML();
-  // CORRECCIÓN: Conectar WebSocket al entrar al perfil para habilitar Cashout
   if (!ws || ws.readyState !== 1) {
     connectWS();
   }
@@ -266,8 +269,10 @@ function confirmTeam() {
 function enterLobby(){ if(ws && ws.readyState === 1) { show('s-lobby'); ws.send(JSON.stringify({type:'ping'})); } else { if(!myBeast) myBeast = 'aries'; connectWS(); } }
 function connectWS(){ clearTimeout(reconnectTimer); isKicked=false; const proto=location.protocol==='https:'?'wss':'ws'; const localWs = new WebSocket(`${proto}://${location.host}`); localWs.onopen=()=>{ clearTimeout(reconnectTimer); lastMsgTime = Date.now(); localWs.send(JSON.stringify({type:'join',name:myName,beast:myBeast||'aries',wallet:myWallet})); }; localWs.onmessage=e=>{ lastMsgTime = Date.now(); try{handleMsg(JSON.parse(e.data));}catch(err){console.error(err);} }; localWs.onerror=()=>{}; localWs.onclose=()=>{ if(ws !== localWs) return; const inBattle=document.getElementById('s-battle').classList.contains('active'); if(!inBattle && !isKicked) reconnectTimer=setTimeout(()=>{ if(myName&&myBeast) connectWS(); },2000); }; ws = localWs; }
 
+// CAMBIO 2: Verificación extra de seguridad al intentar entrar a la torre
 function challengeGauntlet() {
   if(!ws || ws.readyState !== 1) return alert('Conectando...');
+  if(myCurrentHP < 100) return alert('Necesitas al menos 100 HP para entrar a la Torre de Batalla.');
   if(!confirm('¿Iniciar la Torre de Batalla? (Apostarás 100 HP)')) return;
   isGauntletChallenge = true;
   teamSelectionMode = '1v1';
@@ -303,7 +308,6 @@ function handleMsg(m){
     if(m.hp !== undefined) updateHPDisplay(m.hp); 
     updateLobbyBadge(); 
     updateProfileUI(m.stats); 
-    // CORRECCIÓN: Solo ir al lobby automáticamente si estamos en la pantalla de login
     if(document.getElementById('s-login').classList.contains('active') && !isKicked) show('s-lobby'); 
     checkHPNow(false); 
   }
@@ -418,12 +422,21 @@ function renderLobby(others){
 }
 
 async function doCashout(){ const btn=document.getElementById('btn-cashout'); if(btn){btn.disabled=true;btn.textContent='Procesando...';} if(!ws || ws.readyState !== 1){ if(btn){btn.disabled=false;btn.textContent='💰 Cashout';} return; } ws.send(JSON.stringify({type:'cashout'})); }
+
+// CAMBIO 3: Habilitar/Deshabilitar botón de la Torre según el HP
 function updateHPDisplay(hp){ 
   myCurrentHP = hp || 0; 
   const el=document.getElementById('pick-hp-val'); if(el){ el.textContent=hp+' HP'; el.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } 
   const loginHp=document.getElementById('wallet-hp'); if(loginHp){ loginHp.textContent=hp+' HP'; loginHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } 
   const profHp=document.getElementById('profile-hp'); if(profHp){ profHp.textContent=hp+' HP'; profHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } 
   const btn=document.getElementById('btn-cashout'); if(btn){ btn.style.display=hp>0?'inline-block':'none'; btn.disabled=false; btn.textContent='💰 Cashout'; } 
+  
+  // Control del botón de la Torre de Batalla
+  const btnG = document.getElementById('btn-gauntlet');
+  if (btnG && GAUNTLET_HABILITADO) {
+    btnG.style.display = 'inline-block'; // Aseguramos que sea visible
+    btnG.disabled = myCurrentHP < 100; // Se deshabilita si tiene menos de 100 HP
+  }
   
   // INYECTAR WALLET DE PLATAFORMA SIEMPRE
   const lobbyWidget = document.getElementById('lobby-deposit-widget');
