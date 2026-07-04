@@ -44,12 +44,11 @@ function startChallengeBeep() { if (challengeBeepInterval) return; playSfx('boto
 function stopChallengeBeep() { if (challengeBeepInterval) { clearInterval(challengeBeepInterval); challengeBeepInterval = null; } }
 document.addEventListener('click', (e) => { if(e.target.closest('.btn')) playSfx('boton'); });
 
-// CAMBIO 1: Botón de torre arranca deshabilitado hasta saber el HP
 window.addEventListener('load', () => { 
   const btnG = document.getElementById('btn-gauntlet'); 
   if (btnG) {
     btnG.style.display = GAUNTLET_HABILITADO ? 'inline-block' : 'none'; 
-    btnG.disabled = true; // Deshabilitado por defecto al cargar
+    btnG.disabled = true; // NUEVO: Inicia deshabilitado hasta cargar HP
   }
   fetchPlatformWallet(); 
 });
@@ -269,10 +268,9 @@ function confirmTeam() {
 function enterLobby(){ if(ws && ws.readyState === 1) { show('s-lobby'); ws.send(JSON.stringify({type:'ping'})); } else { if(!myBeast) myBeast = 'aries'; connectWS(); } }
 function connectWS(){ clearTimeout(reconnectTimer); isKicked=false; const proto=location.protocol==='https:'?'wss':'ws'; const localWs = new WebSocket(`${proto}://${location.host}`); localWs.onopen=()=>{ clearTimeout(reconnectTimer); lastMsgTime = Date.now(); localWs.send(JSON.stringify({type:'join',name:myName,beast:myBeast||'aries',wallet:myWallet})); }; localWs.onmessage=e=>{ lastMsgTime = Date.now(); try{handleMsg(JSON.parse(e.data));}catch(err){console.error(err);} }; localWs.onerror=()=>{}; localWs.onclose=()=>{ if(ws !== localWs) return; const inBattle=document.getElementById('s-battle').classList.contains('active'); if(!inBattle && !isKicked) reconnectTimer=setTimeout(()=>{ if(myName&&myBeast) connectWS(); },2000); }; ws = localWs; }
 
-// CAMBIO 2: Verificación extra de seguridad al intentar entrar a la torre
 function challengeGauntlet() {
   if(!ws || ws.readyState !== 1) return alert('Conectando...');
-  if(myCurrentHP < 100) return alert('Necesitas al menos 100 HP para entrar a la Torre de Batalla.');
+  if(myCurrentHP < 100) return alert('Necesitas al menos 100 HP para entrar a la Torre de Batalla.'); // NUEVO
   if(!confirm('¿Iniciar la Torre de Batalla? (Apostarás 100 HP)')) return;
   isGauntletChallenge = true;
   teamSelectionMode = '1v1';
@@ -346,6 +344,37 @@ function handleMsg(m){
   if(m.type==='cashout_result'){ const btn=document.getElementById('btn-cashout'); if(!m.ok){ if(btn){btn.disabled=false;btn.textContent='💰 Cashout';} alert('Error: '+m.reason); return; } if(m.status==='confirmed'){ if(btn){btn.disabled=false;btn.textContent='💰 Cashout';} updateHPDisplay(0); alert(`✓ Cashout: ${m.usdc} USDC`); } }
   if(m.type==='error'){ alert('⚠ ' + m.msg); }
   
+  // ═══════════════════════════════════════════
+  // SISTEMA DE DESCONEXIÓN / RECONEXIÓN PVP
+  // ═══════════════════════════════════════════
+  if(m.type==='opponent_disconnected'){ 
+    const turnBar = document.getElementById('turn-bar');
+    if(turnBar) turnBar.innerHTML = '<span style="color:#EF9F27">⏳ Rival desconectado. Esperando reconexión (60s)...</span>';
+    document.querySelectorAll('.atk-btn').forEach(btn => btn.disabled = true);
+  }
+  
+  if(m.type==='opponent_reconnected'){ 
+    const turnBar = document.getElementById('turn-bar');
+    if(turnBar) turnBar.innerHTML = '<span>Turno del rival...</span>'; // Se actualizará con el próximo battle_state
+  }
+
+  if(m.type==='reconnect_battle'){
+    battleId = m.battleId; 
+    myRole = m.role; 
+    oppName = m.opponent;
+    myId = m.id; // FIX LOBBY DUPLICADO: Actualizar nuestro ID local al nuevo del servidor
+    myBeast = m.myBeast;
+    oppBeast = m.oppBeast;
+    window._isTeamBattle = !!m.isTeamBattle;
+    
+    // Forzar entrada a la pantalla de batalla
+    show('s-battle'); 
+    
+    // Mostrar mensaje de reconexión exitosa
+    const turnBar = document.getElementById('turn-bar');
+    if(turnBar) turnBar.innerHTML = '<span style="color:#5DCAA5">✓ ¡Reconectado con éxito! Sincronizando...</span>';
+  }
+
   if(m.type==='battle_end'){
     const won=m.won; 
     const isCpuResult = m.isCpu === true; 
@@ -422,8 +451,6 @@ function renderLobby(others){
 }
 
 async function doCashout(){ const btn=document.getElementById('btn-cashout'); if(btn){btn.disabled=true;btn.textContent='Procesando...';} if(!ws || ws.readyState !== 1){ if(btn){btn.disabled=false;btn.textContent='💰 Cashout';} return; } ws.send(JSON.stringify({type:'cashout'})); }
-
-// CAMBIO 3: Habilitar/Deshabilitar botón de la Torre según el HP
 function updateHPDisplay(hp){ 
   myCurrentHP = hp || 0; 
   const el=document.getElementById('pick-hp-val'); if(el){ el.textContent=hp+' HP'; el.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } 
@@ -431,10 +458,10 @@ function updateHPDisplay(hp){
   const profHp=document.getElementById('profile-hp'); if(profHp){ profHp.textContent=hp+' HP'; profHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } 
   const btn=document.getElementById('btn-cashout'); if(btn){ btn.style.display=hp>0?'inline-block':'none'; btn.disabled=false; btn.textContent='💰 Cashout'; } 
   
-  // Control del botón de la Torre de Batalla
+  // NUEVO: Control del botón de la Torre según el HP
   const btnG = document.getElementById('btn-gauntlet');
   if (btnG && GAUNTLET_HABILITADO) {
-    btnG.style.display = 'inline-block'; // Aseguramos que sea visible
+    btnG.style.display = 'inline-block';
     btnG.disabled = myCurrentHP < 100; // Se deshabilita si tiene menos de 100 HP
   }
   
