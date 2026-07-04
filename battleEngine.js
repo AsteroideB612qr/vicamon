@@ -4,7 +4,7 @@ const {
   getPlayerStats, getPlayerRank, getTopPlayers, 
   USDC_PER_HP 
 } = require('./hp-balance');
-const { lobby, battles, pushBattle, pushLobby, broadcast } = require('./state');
+const { lobby, battles, pushBattle, pushLobby, broadcast, walletToBattle } = require('./state');
 
 function newState() {
   return { hp:100, maxHp:100, poisonDmg:0, poisonTurns:0, burnDmg:0, burnTurns:0,
@@ -146,6 +146,11 @@ async function endBattle(bId, winnerId, loserId, winnerHp, forfeit=false) {
   }
   if (winner) winner.inBattle=false;
   if (loser) loser.inBattle=false;
+
+  // Limpiar mapa de reconexión al terminar batalla
+  if (b && b.p1Wallet) walletToBattle.delete(b.p1Wallet);
+  if (b && b.p2Wallet) walletToBattle.delete(b.p2Wallet);
+
   battles.delete(bId);
   await pushLobby();
 }
