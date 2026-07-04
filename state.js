@@ -4,6 +4,7 @@ const { getHP } = require('./hp-balance');
 const lobby = new Map();      // id -> { ws, name, beast, wallet, inBattle, id }
 const battles = new Map();    // battleId -> battle object
 const processedTx = new Set();
+const walletToBattle = new Map(); // NUEVO: wallet -> battleId (Para reconexiones)
 let nextId = 1;
 
 function uid() { return nextId++; }
@@ -59,6 +60,6 @@ function pushCpuBattle(bId) {
 }
 
 module.exports = {
-  lobby, battles, processedTx, uid,
+  lobby, battles, processedTx, walletToBattle, uid,
   send, broadcast, pushLobby, pushBattle, pushCpuBattle
 };
