@@ -1,5 +1,5 @@
 const BEASTS = require('./beasts.js');
-const { lobby, battles, send, broadcast, pushLobby } = require('./state');
+const { lobby, battles, send, broadcast, pushLobby, walletToBattle } = require('./state');
 const { applyAtk, tickEffects, getStartState } = require('./battleEngine');
 const { settleTeamMatch, updatePlayerStats, getPlayerStats, getPlayerRank, getTopPlayers } = require('./hp-balance');
 const { cpuPickAttack } = require('./cpuAI');
@@ -82,6 +82,11 @@ async function endTeamBattle(bId, winnerId, loserId, winnerRemainingHp) {
   }
   if (winner) winner.inBattle = false;
   if (loser) loser.inBattle = false;
+
+  // NUEVO: Limpiar mapa de reconexión al terminar batalla 3v3
+  if (b && b.p1Wallet) walletToBattle.delete(b.p1Wallet);
+  if (b && b.p2Wallet) walletToBattle.delete(b.p2Wallet);
+
   battles.delete(bId);
   await pushLobby();
 }
