@@ -1,7 +1,7 @@
 const { getHP } = require('./hp-balance');
 
 // Memoria central del juego
-const lobby = new Map();      // id -> { ws, name, beast, wallet, inBattle, id }
+const lobby = new Map();      // id -> { ws, name, beast, wallet, inBattle, id, isGuest }
 const battles = new Map();    // battleId -> battle object
 const processedTx = new Set();
 const walletToBattle = new Map(); // NUEVO: wallet -> battleId (Para reconexiones)
@@ -21,7 +21,9 @@ async function lobbyList() {
   const list = [];
   for (const [id, p] of lobby) {
     if (!p.inBattle) {
-      list.push({ id, name: p.name, beast: p.beast, hp: await getHP(p.wallet) });
+      // NUEVO: Si es invitado, no consultamos la DB, asumimos 0 HP
+      const hp = p.isGuest ? 0 : await getHP(p.wallet);
+      list.push({ id, name: p.name, beast: p.beast, hp, isGuest: p.isGuest || false });
     }
   }
   return list;
