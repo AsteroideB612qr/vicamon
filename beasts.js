@@ -83,6 +83,13 @@ const BEASTS = {
       {n:'Dualidad oceánica',   d:28, acc:100, self:0,  fx:'selfheal10',buff:true,   pp:4, desc:'Ataca y se cura a la vez: 28 HP de daño al rival + 10 HP de cura propia.'},
       {n:'Marea del fin',       d:42, acc:70,  self:0,  fx:'lowHPx15',               pp:99, desc:'Si tu HP está por debajo del 30%, este ataque hace 1.5× el daño normal (63 HP).'},
     ]},
+  irondog:    {name:'Iron Dog',   cat:'Físico',  sub:'Can Cyborg',          img:'IronDog.png',    el:'tierra', style:'equilibrado', stats: {atk:65, def:85, spd:75},
+    attacks:[
+      {n:'Mordida de Titanio',  d:20, acc:100, self:0,  fx:null,                     pp:99, desc:'Colmillos de acero que no fallan. Tu ataque básico y confiable.'},
+      {n:'Sobrecarga Reactor',  d:38, acc:85,  self:8,  fx:null,       risk:true,    pp:4,  desc:'Sobrecarga el núcleo para un golpe devastador. Te inflige 8 HP por el retroceso.'},
+      {n:'Escudo Electromagnético', d:0, acc:100, self:0, fx:'shield1r', buff:true,  pp:3,  desc:'Genera un escudo de 1 turno que refleja 15 HP al atacante.'},
+      {n:'Rastreo Láser',       d:10, acc:100, self:0,  fx:'blind',     debuff:true, pp:4,  desc:'Un rayo láser que daña la visión del rival, cegándolo por 2 turnos.'},
+    ]}
 };
 
 if (typeof module !== 'undefined' && module.exports) {

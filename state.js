@@ -1,10 +1,11 @@
 const { getHP } = require('./hp-balance');
 
 // Memoria central del juego
-const lobby = new Map();      // id -> { ws, name, beast, wallet, inBattle, id, isGuest }
-const battles = new Map();    // battleId -> battle object
+const lobby = new Map();      
+const battles = new Map();    
 const processedTx = new Set();
-const walletToBattle = new Map(); // NUEVO: wallet -> battleId (Para reconexiones)
+const walletToBattle = new Map(); 
+const activePhysicalCodes = new Map(); // NUEVO: codigo -> id del jugador que lo tiene activo
 let nextId = 1;
 
 function uid() { return nextId++; }
@@ -21,9 +22,8 @@ async function lobbyList() {
   const list = [];
   for (const [id, p] of lobby) {
     if (!p.inBattle) {
-      // NUEVO: Si es invitado, no consultamos la DB, asumimos 0 HP
       const hp = p.isGuest ? 0 : await getHP(p.wallet);
-      list.push({ id, name: p.name, beast: p.beast, hp, isGuest: p.isGuest || false });
+      list.push({ id, name: p.name, beast: p.beast, hp, isGuest: p.isGuest || false, physicalBeasts: p.physicalBeasts || [] });
     }
   }
   return list;
@@ -57,11 +57,11 @@ function pushCpuBattle(bId) {
     p1: b.cpuIsP1 ? cpuSide : plSide,
     p2: b.cpuIsP1 ? plSide : cpuSide,
     logs: b.logs.slice(-14),
-    yourTurn: b.turnId !== -1 // -1 es CPU_ID
+    yourTurn: b.turnId !== -1
   });
 }
 
 module.exports = {
-  lobby, battles, processedTx, walletToBattle, uid,
+  lobby, battles, processedTx, walletToBattle, activePhysicalCodes, uid,
   send, broadcast, pushLobby, pushBattle, pushCpuBattle
 };
