@@ -15,7 +15,6 @@ const { sendUSDC } = require('./transfer');
 const BEASTS = require('./beasts.js');
 const BEAST_KEYS = Object.keys(BEASTS);
 
-// NUEVO: Importar walletToBattle desde state.js
 const { lobby, battles, walletToBattle, uid, send, broadcast, pushLobby, pushBattle, pushCpuBattle } = require('./state');
 const { getStartState, processTurn, endBattle } = require('./battleEngine');
 const { CPU_ID, processCpuPlayerTurn, scheduleCpuTurn } = require('./cpuLogic');
@@ -23,16 +22,12 @@ const { processGauntletPlayerTurn, endGauntlet, scheduleGauntletCpuTurn } = requ
 const { pushTeamBattle, processTeamTurn, processTeamSwitch, processTeamCpuPlayerTurn, endTeamBattle } = require('./teamEngine');
 
 const ADMIN_PASS = process.env.ADMIN_PASSWORD || process.env.INTERNAL_SECRET || 'vicamon_secret_key_07012010';
-const OWNER_WALLET = process.env.OWNER_WALLET || ''; // Tu wallet personal para retiros
+const OWNER_WALLET = process.env.OWNER_WALLET || ''; 
 
-// NUEVO: Función para auto-saltar el turno si el jugador desconectado no vuelve en 15s
 function handleDcAutoSkip(bId) {
   const b = battles.get(bId);
   if (!b || !b.dcPlayerId) return;
-
-  clearTimeout(b.dcTurnTimer); // Limpiar temporizador anterior si existe
-  
-  // Si ahora es el turno del jugador desconectado, iniciar cuenta de 15s
+  clearTimeout(b.dcTurnTimer);
   if (b.turnId === b.dcPlayerId) {
     b.dcTurnTimer = setTimeout(async () => {
       const currentB = battles.get(bId);
@@ -163,23 +158,27 @@ const server = http.createServer(async (req, res) => {
         const { pass } = JSON.parse(body);
         if (pass !== ADMIN_PASS) { res.writeHead(403); res.end(JSON.stringify({ ok: false, msg: 'Forbidden' })); return; }
         if (!OWNER_WALLET) { res.writeHead(400); res.end(JSON.stringify({ ok: false, msg: 'OWNER_WALLET no configurada en el servidor' })); return; }
-        
         const balance = await getPlatformUSDCBalance();
         if (balance <= 0.001) { res.writeHead(400); res.end(JSON.stringify({ ok: false, msg: 'No hay suficientes USDC para retirar' })); return; }
-        
         const sig = await sendUSDC(OWNER_WALLET, balance);
         const hpToClear = Math.round(balance / USDC_PER_HP);
         await clearPlatformHp(hpToClear);
-        
         res.writeHead(200); res.end(JSON.stringify({ ok: true, amount: balance, sig }));
-      } catch(e) {
-        res.writeHead(500); res.end(JSON.stringify({ ok: false, msg: e.message }));
-      }
+      } catch(e) { res.writeHead(500); res.end(JSON.stringify({ ok: false, msg: e.message })); }
     });
     return;
   }
 
-  if (urlPath === '/hp') { const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet') || ''; const hp = await getHP(wallet); const stats = await getPlayerStats(wallet); const rank = await getPlayerRank(wallet); res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ hp, wallet, stats: { wins: stats.wins, losses: stats.losses, rank } })); return; }
+  if (urlPath === '/hp') { 
+    const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet') || ''; 
+    if (wallet.startsWith('guest_')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' }); 
+      res.end(JSON.stringify({ hp: 0, wallet, stats: { wins: 0, losses: 0, rank: null } })); 
+      return;
+    }
+    const hp = await getHP(wallet); const stats = await getPlayerStats(wallet); const rank = await getPlayerRank(wallet); 
+    res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ hp, wallet, stats: { wins: stats.wins, losses: stats.losses, rank } })); return; 
+  }
   
   if (urlPath === '/payment' && req.method === 'POST') {
     const secret = req.headers['x-internal-secret'];
@@ -222,80 +221,34 @@ wss.on('connection', ws => {
     try {
       if (msg.type === 'join') {
         const wallet = msg.wallet || '';
+        const isGuest = msg.isGuest || wallet.startsWith('guest_'); 
         
-        // ═══════════════════════════════════════════
-        // SISTEMA DE RECONEXIÓN A BATALLAS PVP
-        // ═══════════════════════════════════════════
-        if (walletToBattle.has(wallet)) {
+        if (!isGuest && walletToBattle.has(wallet)) {
           const bId = walletToBattle.get(wallet);
           const b = battles.get(bId);
-          
-          // Si la batalla sigue activa
           if (b) {
-            // ¡Reconectado! (Rápido o lento, da igual)
-            clearTimeout(b.dcTimer);
-            clearTimeout(b.dcTurnTimer);
-            b.dcPlayerId = null;
-            b.dcWallet = null;
-            
-            // 1. Limpiar CUALQUIER vieja conexión de esta wallet para evitar el bug
+            clearTimeout(b.dcTimer); clearTimeout(b.dcTurnTimer);
+            b.dcPlayerId = null; b.dcWallet = null;
             for (const [oldId, p] of lobby) {
-              if (p.wallet === wallet && oldId !== id) {
-                lobby.delete(oldId); // Borramos del lobby la vieja conexión
-                try { p.ws.close(); } catch(e) {} // Forzamos cierre del viejo socket
-              }
+              if (p.wallet === wallet && oldId !== id) { lobby.delete(oldId); try { p.ws.close(); } catch(e) {} }
             }
-            
-            // 2. Actualizar la batalla con el nuevo ID de WebSocket
-            const isP1 = b.p1Wallet === wallet;
-            const oldId = isP1 ? b.p1id : b.p2id; // Guardamos el viejo ID
+            const isP1 = b.p1Wallet === wallet; const oldId = isP1 ? b.p1id : b.p2id;
             if (isP1) b.p1id = id; else b.p2id = id;
-            
-            // FIX: Si era el turno del viejo ID, actualizar el turnId al nuevo ID
-            if (b.turnId === oldId) {
-                b.turnId = id;
-            }
-            
-            // 3. Restaurar al jugador en el lobby interno
-            lobby.set(id, { ws, name: msg.name, beast: isP1 ? b.p1Beast : b.p2Beast, wallet, inBattle: true, id });
-            
-            // Avisar al oponente que volvimos
-            const oppId = isP1 ? b.p2id : b.p1id;
-            const opp = lobby.get(oppId);
+            if (b.turnId === oldId) b.turnId = id;
+            lobby.set(id, { ws, name: msg.name, beast: isP1 ? b.p1Beast : b.p2Beast, wallet, inBattle: true, id, isGuest: false });
+            const oppId = isP1 ? b.p2id : b.p1id; const opp = lobby.get(oppId);
             if (opp) send(opp.ws, { type: 'opponent_reconnected' });
-
-            // Enviar señal al frontend para que fuerza la pantalla de batalla
             if (b.isTeamBattle) {
-              send(ws, { 
-                type: 'reconnect_battle', battleId: bId, role: isP1 ? 'p1' : 'p2', 
-                id: id, // <--- FIX LOBBY DUPLICADO
-                isTeamBattle: true, opponent: opp?.name || 'Rival',
-                yourTurn: b.turnId === id, myBeast: isP1 ? b.p1Beast : b.p2Beast,
-                oppBeast: isP1 ? b.p2Beast : b.p1Beast
-              });
+              send(ws, { type: 'reconnect_battle', battleId: bId, role: isP1 ? 'p1' : 'p2', id: id, isTeamBattle: true, opponent: opp?.name || 'Rival', yourTurn: b.turnId === id, myBeast: isP1 ? b.p1Beast : b.p2Beast, oppBeast: isP1 ? b.p2Beast : b.p1Beast });
               setTimeout(() => pushTeamBattle(bId), 200);
             } else {
-              send(ws, { 
-                type: 'reconnect_battle', battleId: bId, role: isP1 ? 'p1' : 'p2', 
-                id: id, // <--- FIX LOBBY DUPLICADO
-                isTeamBattle: false, opponent: opp?.name || 'Rival',
-                yourTurn: b.turnId === id, myBeast: isP1 ? b.p1Beast : b.p2Beast,
-                oppBeast: isP1 ? b.p2Beast : b.p1Beast
-              });
+              send(ws, { type: 'reconnect_battle', battleId: bId, role: isP1 ? 'p1' : 'p2', id: id, isTeamBattle: false, opponent: opp?.name || 'Rival', yourTurn: b.turnId === id, myBeast: isP1 ? b.p1Beast : b.p2Beast, oppBeast: isP1 ? b.p2Beast : b.p1Beast });
               setTimeout(() => pushBattle(bId), 200);
             }
-            
-            await pushLobby();
-            return; // ¡FIN! No enviamos al lobby normal, lo dejamos en la batalla
-          } else {
-            // La batalla ya terminó mientras estaba desconectado (expiró el timer de 60s)
-            walletToBattle.delete(wallet);
-          }
+            await pushLobby(); return;
+          } else { walletToBattle.delete(wallet); }
         }
 
-        // ═══════════════════════════════════════════
-        // LÓGICA NORMAL DE JOIN (Si no hay batalla pendiente)
-        // ═══════════════════════════════════════════
         for (const [oldId, p] of lobby) {
           if (p.wallet === wallet && oldId !== id) {
             send(p.ws, { type: 'kicked', msg: 'Tu wallet se conectó en otra pestaña.' });
@@ -303,23 +256,36 @@ wss.on('connection', ws => {
             try { p.ws.close(); } catch(e) {}
           }
         }
-        lobby.set(id, { ws, name: msg.name, beast: msg.beast, wallet, inBattle: false, id });
-        await updatePlayerName(wallet, msg.name);
-        const hp = await getHP(wallet);
-        const stats = await getPlayerStats(wallet);
-        const rank = await getPlayerRank(wallet);
-        send(ws, { type: 'joined', id, hp, stats: { wins: stats.wins, losses: stats.losses, rank } });
-        const top = await getTopPlayers(3);
-        send(ws, { type: 'leaderboard_update', top });
+        lobby.set(id, { ws, name: msg.name, beast: msg.beast, wallet, inBattle: false, id, isGuest });
+        
+        if (isGuest) {
+          send(ws, { type: 'joined', id, hp: 0, isGuest: true, stats: { wins: 0, losses: 0, rank: null } });
+        } else {
+          await updatePlayerName(wallet, msg.name);
+          const hp = await getHP(wallet);
+          const stats = await getPlayerStats(wallet);
+          const rank = await getPlayerRank(wallet);
+          send(ws, { type: 'joined', id, hp, isGuest: false, stats: { wins: stats.wins, losses: stats.losses, rank } });
+          const top = await getTopPlayers(3);
+          send(ws, { type: 'leaderboard_update', top });
+        }
         await pushLobby();
       }
 
       if (msg.type === 'change_beast') { const p = lobby.get(id); if (p && !p.inBattle) { p.beast = msg.beast; await pushLobby(); } }
-      if (msg.type === 'update_nickname') { const p = lobby.get(id); if (p) { p.name = msg.name; await updatePlayerName(p.wallet, msg.name); await pushLobby(); send(ws, { type: 'nickname_updated', name: msg.name }); } }
+      if (msg.type === 'update_nickname') { 
+        const p = lobby.get(id); 
+        if (p) { 
+          p.name = msg.name; 
+          if (!p.isGuest) await updatePlayerName(p.wallet, msg.name);
+          await pushLobby(); send(ws, { type: 'nickname_updated', name: msg.name }); 
+        } 
+      }
 
       if (msg.type === 'challenge') {
         const challenger = lobby.get(id); const target = lobby.get(msg.targetId);
         if (!challenger || !target || target.inBattle || challenger.inBattle) return;
+        if (challenger.isGuest || target.isGuest) { send(ws, { type: 'error', msg: 'Los invitados solo pueden entrenar.' }); return; }
         const challengerHP = await getHP(challenger.wallet); const targetHP = await getHP(target.wallet);
         if (challengerHP < 100) { send(ws, { type: 'error', msg: `Necesitas 100 HP.` }); return; }
         if (targetHP < 100) { send(ws, { type: 'error', msg: `Ese jugador no tiene 100 HP.` }); return; }
@@ -342,12 +308,13 @@ wss.on('connection', ws => {
           send(p2.ws, { type: 'battle_start', battleId: bId, role: 'p2', opponent: p1.name, opponentBeast: p1.beast, isTraining: true });
           await pushLobby(); setTimeout(() => pushBattle(bId), 120);
         } else {
+          if (p1.isGuest || p2.isGuest) { send(ws, { type: 'error', msg: 'Los invitados no pueden hacer batallas por HP.' }); return; }
           if (!await hasHP(p1.wallet, 100) || !await hasHP(p2.wallet, 100)) { send(p1.ws, { type: 'error', msg: 'Fondos insuficientes.' }); return; }
           await lockHP(p1.wallet, 100); await lockHP(p2.wallet, 100);
           p1.inBattle = true; p2.inBattle = true;
           const bId = `b${uid()}`;
           battles.set(bId, { p1id: msg.fromId, p2id: id, st1: getStartState(p1.beast), st2: getStartState(p2.beast), turnId: msg.fromId, logs: [], isCpu: false, isTraining: false, p1Wallet: p1.wallet, p2Wallet: p2.wallet, p1Beast: p1.beast, p2Beast: p2.beast });
-          battles.get(bId).logs.push({t: `¡Combate 1v1!`, c: 'hi'});
+          battles.get(bId).logs.push({t: `¡Batalla por HP 1v1!`, c: 'hi'});
           send(p1.ws, { type: 'battle_start', battleId: bId, role: 'p1', opponent: p2.name, opponentBeast: p2.beast, isCpu: false, isTraining: false });
           send(p2.ws, { type: 'battle_start', battleId: bId, role: 'p2', opponent: p1.name, opponentBeast: p1.beast, isCpu: false, isTraining: false });
           walletToBattle.set(p1.wallet, bId); walletToBattle.set(p2.wallet, bId);
@@ -358,6 +325,7 @@ wss.on('connection', ws => {
       if (msg.type === 'challenge_3v3') {
         const challenger = lobby.get(id); const target = lobby.get(msg.targetId);
         if (!challenger || !target || target.inBattle || challenger.inBattle) return;
+        if (challenger.isGuest || target.isGuest) { send(ws, { type: 'error', msg: 'Los invitados no pueden hacer batallas por HP.' }); return; }
         const challengerHP = await getHP(challenger.wallet); const targetHP = await getHP(target.wallet);
         if (challengerHP < 300) { send(ws, { type: 'error', msg: `Necesitas 300 HP.` }); return; }
         if (targetHP < 300) { send(ws, { type: 'error', msg: `Ese jugador no tiene 300 HP.` }); return; }
@@ -375,6 +343,7 @@ wss.on('connection', ws => {
         if (!p1 || !p2 || p1.inBattle || p2.inBattle) return;
         p2.team = msg.team;
         if (!msg.isTraining) {
+          if (p1.isGuest || p2.isGuest) { send(ws, { type: 'error', msg: 'Los invitados no pueden hacer batallas por HP.' }); return; }
           if (!await hasHP(p1.wallet, 300) || !await hasHP(p2.wallet, 300)) { send(p1.ws, { type: 'error', msg: 'Fondos insuficientes para 3v3.' }); return; }
           await lockHP(p1.wallet, 300); await lockHP(p2.wallet, 300);
         }
@@ -383,7 +352,7 @@ wss.on('connection', ws => {
         battles.set(bId, { p1id: msg.fromId, p2id: id, team1: p1.team.map(k => getStartState(k)), team2: p2.team.map(k => getStartState(k)), active1: 0, active2: 0, turnId: msg.fromId, logs: [{t: `¡Combate 3v3!`, c: 'hi'}], isTeamBattle: true, isTeamTraining: msg.isTraining, isCpu: false, p1Wallet: p1.wallet, p2Wallet: p2.wallet, p1Team: p1.team, p2Team: p2.team });
         send(p1.ws, { type: 'battle_start', battleId: bId, role: 'p1', opponent: p2.name, opponentBeast: p2.team[0], isTeamBattle: true, isTraining: msg.isTraining, isCpu: false });
         send(p2.ws, { type: 'battle_start', battleId: bId, role: 'p2', opponent: p1.name, opponentBeast: p1.team[0], isTeamBattle: true, isTraining: msg.isTraining, isCpu: false });
-        walletToBattle.set(p1.wallet, bId); walletToBattle.set(p2.wallet, bId);
+        if (!msg.isTraining) { walletToBattle.set(p1.wallet, bId); walletToBattle.set(p2.wallet, bId); }
         await pushLobby(); setTimeout(() => pushTeamBattle(bId), 120);
       }
 
@@ -414,20 +383,14 @@ wss.on('connection', ws => {
         else if (b.isGauntlet) await processGauntletPlayerTurn(msg.battleId, id, msg.index);
         else if (b.isCpu) await processCpuPlayerTurn(msg.battleId, id, msg.index);
         else await processTurn(msg.battleId, id, msg.index);
-        
-        handleDcAutoSkip(msg.battleId); // NUEVO: Revisar si hay que auto-saltar turno tras atacar
+        handleDcAutoSkip(msg.battleId);
       }
       
       if (msg.type === 'team_switch') { const b = battles.get(msg.battleId); if (!b) return; await processTeamSwitch(msg.battleId, id, msg.index); }
       
       if (msg.type === 'surrender') {
         const b = battles.get(msg.battleId); if (!b) return;
-        if (b.isTeamBattle) { 
-          const otherId = b.p1id === id ? b.p2id : b.p1id; 
-          const winnerTeam = b.p1id === otherId ? b.team1 : b.team2;
-          const winnerRemainingHp = winnerTeam.reduce((sum, st) => sum + Math.max(0, st.hp), 0);
-          await endTeamBattle(msg.battleId, otherId, id, winnerRemainingHp); 
-        }
+        if (b.isTeamBattle) { const otherId = b.p1id === id ? b.p2id : b.p1id; const winnerTeam = b.p1id === otherId ? b.team1 : b.team2; const winnerRemainingHp = winnerTeam.reduce((sum, st) => sum + Math.max(0, st.hp), 0); await endTeamBattle(msg.battleId, otherId, id, winnerRemainingHp); }
         else if (b.isGauntlet) await endGauntlet(msg.battleId, id, false);
         else if (b.isCpu) await endBattle(msg.battleId, CPU_ID, id, 0, true);
         else if (b.p1id === id || b.p2id === id) { const otherId = b.p1id === id ? b.p2id : b.p1id; await endBattle(msg.battleId, otherId, id, 0, true); }
@@ -435,6 +398,7 @@ wss.on('connection', ws => {
 
       if (msg.type === 'challenge_gauntlet') {
         const pl = lobby.get(id); if (!pl || pl.inBattle) return;
+        if (pl.isGuest) { send(ws, { type: 'error', msg: 'Los invitados no pueden entrar a la Torre.' }); return; }
         if (msg.beast) pl.beast = msg.beast; 
         if (!await hasHP(pl.wallet, 100)) { send(ws, { type: 'error', msg: 'Necesitas 100 HP para la Torre.' }); return; }
         await lockHP(pl.wallet, 100); pl.inBattle = true;
@@ -453,7 +417,7 @@ wss.on('connection', ws => {
       
       if (msg.type === 'cashout') {
         const pl = lobby.get(id);
-        if (!pl || pl.inBattle) { send(ws, { type: 'cashout_result', ok: false, reason: 'En batalla' }); return; }
+        if (!pl || pl.inBattle || pl.isGuest) { send(ws, { type: 'cashout_result', ok: false, reason: 'No permitido para invitados' }); return; }
         const currentHp = await getHP(pl.wallet);
         if (currentHp <= 0) { send(ws, { type: 'cashout_result', ok: false, reason: 'Sin HP' }); return; }
         const usdcNeeded = parseFloat((currentHp * 0.001).toFixed(6));
@@ -467,7 +431,7 @@ wss.on('connection', ws => {
       }
       
       if (msg.type === 'chat_message') { const p = lobby.get(id); if (!p) return; broadcast({ type: 'chat_message', name: p.name, text: (msg.text || '').slice(0, 200) }); }
-      if (msg.type === 'ping') { const p = lobby.get(id); if (p) { send(ws, { type: 'hp_updated', hp: await getHP(p.wallet || '') }); await pushLobby(); } }
+      if (msg.type === 'ping') { const p = lobby.get(id); if (p) { send(ws, { type: 'hp_updated', hp: p.isGuest ? 0 : await getHP(p.wallet || '') }); await pushLobby(); } }
       if (msg.type === 'leave_lobby') { const p = lobby.get(id); if (p && !p.inBattle) { lobby.delete(id); await pushLobby(); } }
     } catch(e) {
       console.error("Error procesando mensaje:", e);
@@ -479,19 +443,17 @@ wss.on('connection', ws => {
     try {
       const p = lobby.get(id); if (!p) return;
 
-      // ═══════════════════════════════════════════
-      // SISTEMA DE DESCONEXIÓN EN PVP
-      // ═══════════════════════════════════════════
       const bId = walletToBattle.get(p.wallet);
       const b = battles.get(bId);
 
-      if (b && !b.isTraining && !b.isCpu && !b.isGauntlet) {
-        // ¡Estaba en PvP! Iniciar sistema de gracia
-        b.dcPlayerId = id;
-        b.dcWallet = p.wallet;
-        b.dcTime = Date.now();
-
-        // 1. Temporizador Global de 60 segundos (Derrota total)
+      if (p.isGuest && b && !b.isTraining && !b.isCpu && !b.isGauntlet) {
+        const winnerId = (id === b.p1id) ? b.p2id : b.p1id;
+        const winnerSt = (id === b.p1id) ? b.st2 : b.st1;
+        await endBattle(bId, winnerId, id, Math.max(0, winnerSt.hp));
+        walletToBattle.delete(p.wallet);
+      } 
+      else if (b && !b.isTraining && !b.isCpu && !b.isGauntlet) {
+        b.dcPlayerId = id; b.dcWallet = p.wallet; b.dcTime = Date.now();
         b.dcTimer = setTimeout(async () => {
           const currentB = battles.get(bId);
           if (currentB && currentB.dcPlayerId === id) {
@@ -508,7 +470,6 @@ wss.on('connection', ws => {
           }
         }, 60000);
 
-        // 2. Temporizador de Turno de 15 segundos (Auto-pasar turno)
         if (b.turnId === id) {
           b.dcTurnTimer = setTimeout(async () => {
             const currentB = battles.get(bId);
@@ -519,19 +480,11 @@ wss.on('connection', ws => {
           }, 15000);
         }
 
-        // Avisar al oponente
-        const oppId = (id === b.p1id) ? b.p2id : b.p1id;
-        const opp = lobby.get(oppId);
+        const oppId = (id === b.p1id) ? b.p2id : b.p1id; const opp = lobby.get(oppId);
         if (opp) send(opp.ws, { type: 'opponent_disconnected', secondsLeft: 60 });
-
-        lobby.delete(id); // Lo sacamos del lobby, pero la batalla sobrevive
-        await pushLobby();
-        return; // ¡NO terminamos la batalla todavía!
+        lobby.delete(id); await pushLobby(); return;
       }
 
-      // ═══════════════════════════════════════════
-      // LÓGICA NORMAL DE DESCONEXIÓN (Training, CPU, Lobby)
-      // ═══════════════════════════════════════════
       for (const [bId, b] of battles) {
         if (b.isTraining && (b.p1id === id || b.p2id === id)) { battles.delete(bId); } 
         else if (b.isTeamBattle && (b.p1id === id || b.p2id === id)) { 
