@@ -1,4 +1,4 @@
-const GAUNTLET_HABILITADO = true;
+var GAUNTLET_HABILITADO = true;
 
 const EL = {fuego:'#E8621A', tierra:'#7A9A3E', aire:'#4A9EFF', agua:'#2C6AA0'};
 const STCSS = {
@@ -11,88 +11,20 @@ const STCSS = {
   soporte:'background:rgba(130,80,180,.2);color:#CFA9EC'
 };
 
-let ws=null, myId=null, myName='', myBeast='', myRole='', oppName='', oppBeast='', battleId='';
-let mySt={}, oppSt={}, pendingFrom=null, pendingIsTraining=false, pendingIs3v3=false;
-let reconnectTimer=null, myWallet='', myCurrentHP=0, isKicked=false;
-let isGuest = false;
-let myPhysicalBeasts = [];
-let myStats = { wins: 0, losses: 0, rank: null };
-let gauntletBattleId = null, gauntletSelectedBeast = null;
-let qrScanner = null; // NUEVO: Variable para el escáner
+var ws=null, myId=null, myName='', myBeast='', myRole='', oppName='', oppBeast='', battleId='';
+var mySt={}, oppSt={}, pendingFrom=null, pendingIsTraining=false, pendingIs3v3=false;
+var reconnectTimer=null, isKicked=false;
+var gauntletBattleId = null, gauntletSelectedBeast = null;
+var qrScanner = null; 
 
-let pendingChallengeTargetId = null;
-let teamSelectionMode = '1v1'; 
-let selectedTeam = []; 
-let myTeam = [];
-let isGauntletChallenge = false;
-let lastMsgTime = Date.now(); 
-
-let platformWalletAddress = ''; 
-
-const audioFiles = {
-    lobby: new Audio('Audio/lobby.mp3'),
-    batalla: new Audio('Audio/batalla.mp3'),
-    ataque: new Audio('Audio/ataque.mp3'),
-    curacion: new Audio('Audio/curacion.mp3'),
-    boton: new Audio('Audio/boton.mp3')
-};
-audioFiles.lobby.loop = true; audioFiles.lobby.volume = 0.3;
-audioFiles.batalla.loop = true; audioFiles.batalla.volume = 0.3;
-let currentMusic = null, isMuted = false, challengeBeepInterval = null;
-
-function playMusic(track) { if (currentMusic === audioFiles[track]) return; if (currentMusic) currentMusic.pause(); currentMusic = audioFiles[track]; if (!isMuted) currentMusic.play().catch(e=>{}); }
-function playSfx(track) { if (isMuted) return; const sfx = audioFiles[track]; if (!sfx) return; sfx.currentTime = 0; sfx.play().catch(e=>{}); }
-function toggleMute() { isMuted = !isMuted; const btn = document.getElementById('btn-mute'); if (isMuted) { if (currentMusic) currentMusic.pause(); btn.textContent = '🔇'; } else { if (currentMusic) currentMusic.play().catch(e=>{}); btn.textContent = '🔊'; } }
-function startChallengeBeep() { if (challengeBeepInterval) return; playSfx('boton'); challengeBeepInterval = setInterval(() => { playSfx('boton'); }, 1500); }
-function stopChallengeBeep() { if (challengeBeepInterval) { clearInterval(challengeBeepInterval); challengeBeepInterval = null; } }
-document.addEventListener('click', (e) => { if(e.target.closest('.btn')) playSfx('boton'); });
-
-window.addEventListener('load', () => { 
-  const btnG = document.getElementById('btn-gauntlet'); 
-  if (btnG) { btnG.style.display = GAUNTLET_HABILITADO ? 'inline-block' : 'none'; btnG.disabled = true; }
-  fetchPlatformWallet(); 
-});
-
-async function fetchPlatformWallet() { try { const res = await fetch('/platform-wallet'); const data = await res.json(); if (data.wallet) { platformWalletAddress = data.wallet; const loginWalletSpan = document.querySelector('#step-charge div[onclick="copyWallet()"] span'); if (loginWalletSpan) loginWalletSpan.textContent = platformWalletAddress; } } catch(e) { console.error("Error cargando wallet de plataforma:", e); } }
-
-function playAsGuest() { myWallet = 'guest_' + Math.random().toString(36).substring(2, 8); isGuest = true; myCurrentHP = 0; document.getElementById('btn-phantom').style.display = 'none'; document.getElementById('btn-guest').style.display = 'none'; document.getElementById('wallet-connected').style.display = 'none'; document.getElementById('no-phantom').style.display = 'none'; document.getElementById('step-charge').style.display = 'none'; const sn = document.getElementById('step-name'); if(sn){ sn.style.opacity='1'; sn.style.pointerEvents='auto'; } document.getElementById('inp-name').focus(); }
-
-async function disconnectWallet() { 
-  try { const phantom = getPhantom(); if (phantom && phantom.isConnected) await phantom.disconnect(); } catch(e) {} 
-  myWallet = ''; myName = ''; myBeast = ''; isGuest = false; 
-  myPhysicalBeasts = []; localStorage.removeItem('vicamon_physical_codes');
-  if(ws) { try { ws.close(); } catch(e){} } 
-  document.getElementById('btn-phantom').style.display='flex'; document.getElementById('btn-guest').style.display='flex'; document.getElementById('wallet-connected').style.display='none'; document.getElementById('no-phantom').style.display='none'; document.getElementById('inp-name').value = ''; show('s-login'); 
-}
-
-function copyWallet() { if (!platformWalletAddress) return alert('La wallet no se ha cargado aún.'); navigator.clipboard.writeText(platformWalletAddress).then(() => { alert('¡Dirección copiada! Envía USDC a esa wallet.'); }).catch(() => alert('Dirección: ' + platformWalletAddress)); }
-
-function depositWidgetHTML() { if (isGuest) return ''; const walletAddr = platformWalletAddress || 'Cargando...'; return `<div style="background:rgba(74,158,255,.06);border:0.5px solid rgba(74,158,255,.2);border-radius:10px;padding:10px 12px"><div style="font-size:11px;color:#85B7EB;margin-bottom:4px">💡 Deposita USDC para obtener HP</div><div style="font-size:10px;color:rgba(255,255,255,.4);margin-bottom:7px">0.10 USDC = 100 HP · cualquier monto funciona</div><div style="display:flex;gap:6px;align-items:center"><div style="flex:1;background:rgba(0,0,0,.35);border-radius:6px;padding:6px 8px;font-family:monospace;font-size:9px;color:#85B7EB;word-break:break-all;cursor:pointer" onclick="copyWallet()">${walletAddr} <span style="color:rgba(255,255,255,.3)">📋</span></div><button class="btn btn-sm" style="font-size:10px;white-space:nowrap;padding:5px 10px" onclick="checkHPNow()">Verificar HP</button></div></div>`; }
-
-function getPhantom() { return window.phantom?.solana || window.solana || null; }
-
-async function connectPhantom() {
-  await new Promise(r => setTimeout(r, 100));
-  const phantom = getPhantom();
-  if (!phantom || !phantom.isPhantom) {
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent); const currentUrl = window.location.href;
-    if (isMobile) { const deepLink = `https://phantom.app/ul/browse/${currentUrl}`; const noPhantomDiv = document.getElementById('no-phantom'); noPhantomDiv.style.display = 'block'; noPhantomDiv.innerHTML = `<div style="color:#F0997B; font-size:13px; line-height:1.5; text-align:left"><strong>📱 Para jugar desde tu móvil:</strong><br><br>1. Abre la app de <strong>Phantom</strong>.<br>2. Ve a <strong>"Descubrir" (🔍)</strong>.<br>3. Pega este enlace:<div style="background:rgba(0,0,0,.3); padding:8px; margin-top:8px; border-radius:6px; word-break:break-all; font-family:monospace; font-size:10px; color:#85B7EB; cursor:pointer; display:flex; justify-content:space-between; align-items:center" onclick="copyText('${currentUrl}')"><span>${currentUrl}</span><span style="margin-left:8px; white-space:nowrap">📋</span></div><br><button class="btn btn-blue btn-sm" style="width:100%; padding:10px" onclick="window.location.href='${deepLink}'">Intentar abrir automáticamente</button></div>`; document.getElementById('btn-phantom').style.display = 'none'; document.getElementById('btn-guest').style.display = 'none'; return; }
-    document.getElementById('no-phantom').style.display='block'; document.getElementById('no-phantom').innerHTML = 'Phantom no detectado. <a href="https://phantom.app" target="_blank" style="color:#F0997B;text-decoration:underline">Instalalo aqui</a>.'; document.getElementById('btn-phantom').style.display='none'; document.getElementById('btn-guest').style.display='none'; return;
-  }
-  try {
-    const resp = await phantom.connect(); const wasGuest = isGuest; myWallet = resp.publicKey.toString(); isGuest = false; 
-    document.getElementById('btn-phantom').style.display='none'; document.getElementById('btn-guest').style.display='none'; document.getElementById('wallet-connected').style.display='block'; document.getElementById('wallet-addr').textContent = myWallet.slice(0,8)+'...'+myWallet.slice(-6); document.getElementById('wallet-hp').textContent = 'Verificando...'; const sn = document.getElementById('step-name'); if(sn){ sn.style.opacity='1'; sn.style.pointerEvents='auto'; }
-    if (wasGuest) { if (ws) { try { ws.close(); } catch(e) {} } connectWS(); } else { await checkHPNow(true); const savedName = localStorage.getItem('vicamon_nick'); if (savedName) { document.getElementById('inp-name').value = savedName; goProfile(); } }
-  } catch(e) { console.error('Phantom error:', e); alert('No se pudo conectar Phantom.'); }
-}
-function copyText(text) { navigator.clipboard.writeText(text).then(() => alert('¡Enlace copiado!')).catch(() => alert('Copia este enlace manualmente: ' + text)); }
-window.addEventListener('load', async () => { await new Promise(r => setTimeout(r, 500)); const ph2 = getPhantom(); if (ph2?.isPhantom && ph2.isConnected) { try { const r2 = await ph2.connect({ onlyIfTrusted: true }); myWallet = r2.publicKey.toString(); isGuest = false; document.getElementById('btn-phantom').style.display='none'; document.getElementById('btn-guest').style.display='none'; document.getElementById('wallet-connected').style.display='block'; document.getElementById('wallet-addr').textContent = myWallet.slice(0,8)+'...'+myWallet.slice(-6); document.getElementById('wallet-hp').textContent = 'Verificando...'; await checkHPNow(true); const savedName = localStorage.getItem('vicamon_nick'); if (savedName) { document.getElementById('inp-name').value = savedName; goProfile(); } } catch(e) {} } });
+var pendingChallengeTargetId = null;
+var teamSelectionMode = '1v1'; 
+var selectedTeam = []; 
+var myTeam = [];
+var isGauntletChallenge = false;
+var lastMsgTime = Date.now(); 
 
 setInterval(() => { if (ws && ws.readyState === 1) { if (Date.now() - lastMsgTime > 25000) { console.log("WS timeout, forzando reconexión..."); try { ws.close(); } catch(e) {} return; } ws.send(JSON.stringify({type:'ping'})); } }, 10000);
-
-async function checkHPNow(fromConnect=false) { if (!myWallet || isGuest) return; try { const res = await fetch('/hp?wallet='+myWallet); const data = await res.json(); const hp = data.hp || 0; const loginHp = document.getElementById('wallet-hp'); if(loginHp){ loginHp.textContent=hp+' HP'; loginHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } updateHPDisplay(hp); if (data.stats) updateProfileUI(data.stats); if(document.getElementById('s-lobby').classList.contains('active') && ws){ ws.send(JSON.stringify({type:'ping'})); } if (hp >= 100) { document.getElementById('step-charge').style.display='none'; document.getElementById('step-name').style.opacity='1'; document.getElementById('step-name').style.pointerEvents='auto'; } else { document.getElementById('step-charge').style.display='block'; document.getElementById('step-name').style.opacity='1'; document.getElementById('step-name').style.pointerEvents='auto'; } } catch(e) { document.getElementById('wallet-hp').textContent = 'Error'; } }
-
-function updateProfileUI(stats) { if (stats) myStats = stats; const nameEl = document.getElementById('profile-name'); if (nameEl) { nameEl.textContent = myName || 'Jugador'; document.getElementById('profile-wallet').textContent = isGuest ? 'Modo Invitado (Sin Wallet)' : (myWallet ? myWallet.slice(0,8)+'...'+myWallet.slice(-6) : 'Desconectado'); document.getElementById('profile-wallet-box').style.display = isGuest ? 'none' : 'block'; document.getElementById('profile-wins').textContent = myStats.wins || 0; document.getElementById('profile-losses').textContent = myStats.losses || 0; document.getElementById('profile-rank').textContent = myStats.rank ? '#' + myStats.rank : 'Sin clasificado'; document.getElementById('guest-upgrade-banner').style.display = isGuest ? 'block' : 'none'; } }
 
 function show(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById(id).classList.add('active'); if(id === 's-login' || id === 's-pick' || id === 's-lobby' || id === 's-profile' || id === 's-team-select') playMusic('lobby'); if(id === 's-battle' || id === 's-result') playMusic('batalla'); }
 function hpColor(pct){return pct>50?'#5DCAA5':pct>25?'#EF9F27':'#F0997B';}
@@ -160,11 +92,8 @@ function animAttack(side){ const spr=document.getElementById('spr-'+side); if(!s
 
 function updateLobbyBadge(){ document.getElementById('lbl-myname').textContent=myName; const hpEl = document.getElementById('lbl-myhp'); if(hpEl) hpEl.textContent = isGuest ? 'Invitado' : (myCurrentHP + ' HP'); const b = BEASTS[myBeast] || BEASTS['aries']; const badgeImg = document.getElementById('badge-img'); if(badgeImg) { badgeImg.src=b.img; badgeImg.style.display='block'; } }
 
-let _lastLobbyPlayers=[]; function renderLobbyFromCache(){ renderLobby(_lastLobbyPlayers); }
+var _lastLobbyPlayers=[]; function renderLobbyFromCache(){ renderLobby(_lastLobbyPlayers); }
 function renderLobby(others){ _lastLobbyPlayers=others; const list=document.getElementById('players-list'); const myHp=myCurrentHP; const hpWarnEl=document.getElementById('low-hp-warning'); if(hpWarnEl) { hpWarnEl.style.display = 'block'; const warnMsg = hpWarnEl.querySelector('div:first-child'); if (warnMsg) warnMsg.style.display = (!isGuest && myHp < 100) ? 'block' : 'none'; } document.getElementById('guest-lobby-banner').style.display = isGuest ? 'flex' : 'none'; if(!others.length){list.innerHTML='<p class="empty-lobby">No hay otros jugadores...</p>';return;} list.innerHTML=others.map(p=>{ const b=BEASTS[p.beast]||{name:p.beast,img:''}; const rivalHp=p.hp||0; const isTargetGuest = p.isGuest || false; const canChallengeHP = !isGuest && !isTargetGuest && myHp >= 100 && rivalHp >= 100; const hpColor=rivalHp>=100?'#5DCAA5':'#F0997B'; const hpText = isTargetGuest ? 'Invitado' : `${rivalHp} HP`; return `<div class="p-row"><div class="p-info"><img class="p-img" src="${b.img}"><div><div class="p-name">${p.name}</div><div class="p-beast">${b.name} · <span style="color:${hpColor};font-size:10px">${hpText}</span></div></div></div><div style="display:flex;gap:6px"><button class="btn btn-sm" style="background:rgba(130,80,180,.15);border:1px solid rgba(130,80,180,.35);color:#CFA9EC" onclick="openChallengeMenu(${p.id},'${p.name}', true)">🤝 Entrenar</button><button class="btn btn-blue btn-sm" ${canChallengeHP?'':'disabled'} onclick="openChallengeMenu(${p.id},'${p.name}', false)">⚔️ Batalla HP</button></div></div>`; }).join(''); }
-
-async function doCashout(){ if(isGuest) return alert('Los invitados no pueden hacer cashout.'); const btn=document.getElementById('btn-cashout'); if(btn){btn.disabled=true;btn.textContent='Procesando...';} if(!ws || ws.readyState !== 1){ if(btn){btn.disabled=false;btn.textContent='💰 Cashout';} return; } ws.send(JSON.stringify({type:'cashout'})); }
-function updateHPDisplay(hp){ if(isGuest) hp = 0; myCurrentHP = hp || 0; const el=document.getElementById('pick-hp-val'); if(el){ el.textContent=hp+' HP'; el.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } const loginHp=document.getElementById('wallet-hp'); if(loginHp){ loginHp.textContent=hp+' HP'; loginHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } const profHp=document.getElementById('profile-hp'); if(profHp){ profHp.textContent=hp+' HP'; profHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } const profUsdc=document.getElementById('profile-usdc'); if(profUsdc){ profUsdc.textContent=(hp*0.001).toFixed(3)+' USDC'; } const btn=document.getElementById('btn-cashout'); if(btn){ btn.style.display=hp>0 && !isGuest?'inline-block':'none'; btn.disabled=false; btn.textContent='💰 Cashout'; } const btnG = document.getElementById('btn-gauntlet'); if (btnG && GAUNTLET_HABILITADO) { btnG.style.display = 'inline-block'; btnG.disabled = isGuest || myCurrentHP < 100; } const lobbyWidget = document.getElementById('lobby-deposit-widget'); if(lobbyWidget) lobbyWidget.innerHTML = depositWidgetHTML(); const profWidget = document.getElementById('profile-deposit-widget'); if(profWidget) profWidget.innerHTML = depositWidgetHTML(); if(document.getElementById('s-lobby')?.classList.contains('active')){ renderLobbyFromCache(); updateLobbyBadge(); } }
 
 function challengeMaster(){ if(!ws || ws.readyState !== 1) return; openChallengeMenu(null, 'Zodiac Master', true); }
 function acceptChallenge(){ document.getElementById('modal-challenged').classList.add('hidden'); stopChallengeBeep(); if(pendingFrom===null) return; if(isGuest && !pendingIsTraining) { alert('Los invitados solo pueden aceptar entrenamientos. Conecta tu wallet para batallas por HP.'); rejectChallenge(); return; } teamSelectionMode = pendingIs3v3 ? '3v3' : '1v1'; selectedTeam = []; const title = (pendingIs3v3 ? '3 vs 3' : '1 vs 1') + (pendingIsTraining ? ' (Entrenamiento)' : ' (Batalla por HP)'); document.getElementById('ts-mode-title').textContent = title; buildTeamPickGrid(); show('s-team-select'); }
@@ -180,27 +109,20 @@ function leaveLobby(){ if(ws) ws.send(JSON.stringify({type:'leave_lobby'})); isK
 function backToLobby(){ updateLobbyBadge(); show('s-lobby'); }
 document.getElementById('inp-name').addEventListener('keydown',e=>{if(e.key==='Enter')goProfile();});
 
-function redeemPhysicalCode() { const input = document.getElementById('inp-physical-code'); const code = input.value.trim(); if(!code) return; if(ws && ws.readyState === 1) ws.send(JSON.stringify({type:'redeem_physical_code', code: code})); input.value = ''; }
-function autoRedeemPhysicalCodes() { const codes = JSON.parse(localStorage.getItem('vicamon_physical_codes') || '[]'); codes.forEach(code => { if(ws && ws.readyState === 1) ws.send(JSON.stringify({type:'redeem_physical_code', code: code})); }); }
-function updatePhysicalUI() { const list = document.getElementById('physical-beasts-list'); if(!list) return; if(myPhysicalBeasts.length === 0) { list.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,.3)">Ningún Vicamon físico invocado</div>'; return; } list.innerHTML = myPhysicalBeasts.map(k => { const b = BEASTS[k]; if(!b) return ''; return `<div style="background:rgba(246,226,102,.1);border:0.5px solid rgba(246,226,102,.3);border-radius:8px;padding:6px;display:flex;align-items:center;gap:6px"><img src="${b.img}" style="width:30px;height:30px;image-rendering:pixelated"><span style="font-size:12px;color:#F6E265;font-weight:600">${b.name}</span></div>`; }).join(''); }
-
-// NUEVO: FUNCIONES DEL ESCÁNER QR
 function openQRScanner() {
     const modal = document.getElementById('modal-qr-scanner');
     modal.classList.remove('hidden');
-    if (qrScanner) return; // Ya está abierto
-
+    if (qrScanner) return; 
     qrScanner = new Html5Qrcode("qr-reader");
     qrScanner.start(
-        { facingMode: "environment" }, // Cámara trasera
+        { facingMode: "environment" }, 
         { fps: 10, qrbox: 250 },
         (decodedText) => {
-            // Éxito: inyectar código y enviar
             document.getElementById('inp-physical-code').value = decodedText;
             redeemPhysicalCode();
             closeQRScanner();
         },
-        (errorMessage) => { /* Ignorar errores de escaneo continuo */ }
+        (errorMessage) => { /* Ignorar */ }
     ).catch(err => {
         alert('No se pudo acceder a la cámara. Asegúrate de dar permisos o usa el campo de texto.');
         closeQRScanner();
@@ -215,7 +137,7 @@ function closeQRScanner() {
             qrScanner.clear();
             qrScanner = null;
         }).catch(err => {
-            qrScanner = null; // Forzar limpieza
+            qrScanner = null; 
         });
     }
 }
