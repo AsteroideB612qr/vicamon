@@ -42,7 +42,6 @@ function applyAtk(aSt, dSt, atk, aName) {
   if (fx==='weaken') { dSt.weaken=2; logs.push({t:`${aName} debilita al rival`,c:'special'}); return logs; }
   if (fx==='counter') { const h=aSt.lastDmgReceived||0; aSt.hp=Math.min(aSt.maxHp,aSt.hp+h); logs.push({t:`${aName} usa Contrapeso: +${h} HP`,c:'good'}); return logs; }
   
-  // CORRECCIÓN: Bug de Géminis arreglado - Ahora intercambia TODOS los estados negativos
   if (fx==='swap') { 
     const propsToSwap = ['stun', 'poisonDmg', 'poisonTurns', 'burnDmg', 'burnTurns', 'blind', 'weakAtk', 'weaken', 'corrode'];
     propsToSwap.forEach(prop => {
@@ -53,7 +52,6 @@ function applyAtk(aSt, dSt, atk, aName) {
     logs.push({t:`${aName} intercambia estados negativos con el rival`,c:'special'}); 
     return logs; 
   }
-  // FIN CORRECCIÓN
 
   if (fx==='equalize') { const diff=Math.abs(aSt.hp-dSt.hp); dSt.hp=Math.max(0,dSt.hp-diff); logs.push({t:`${aName} → Equilibrio: ${diff} HP`,c:'bad'}); return logs; }
   if (fx==='chaos'||fx==='chaosHi') { if (Math.random()*100 >= atk.acc-blind) { logs.push({t:`${aName} → ¡falló!`,c:'bad'}); return logs; } const dmg=fx==='chaosHi'?Math.floor(Math.random()*36)+10:Math.floor(Math.random()*36)+5; dSt.hp=Math.max(0,dSt.hp-dmg); logs.push({t:`${aName} → Caos: ${dmg} HP`,c:'bad'}); return logs; }
@@ -115,9 +113,21 @@ async function endBattle(bId, winnerId, loserId, winnerHp, forfeit=false) {
   const b = battles.get(bId);
   const isCpu = b?.isCpu || false;
   const isTraining = b?.isTraining || false;
+  const isLabSimulation = b?.isLabSimulation || false; // NUEVO
   const winner = lobby.get(winnerId);
   const loser = lobby.get(loserId);
   const hp = forfeit ? 100 : Math.max(0, Math.min(100, winnerHp));
+
+  // NUEVO: Si es simulación del laboratorio, no tocar DB ni HP, solo avisar al frontend
+  if (isLabSimulation) {
+    if(winner) winner.ws.send(JSON.stringify({ type:'battle_end', won:true, isCpu:true, isTraining:true, isLabSimulation:true, winnerXp:0, loserXp:0 }));
+    if(loser) loser.ws.send(JSON.stringify({ type:'battle_end', won:false, isCpu:true, isTraining:true, isLabSimulation:true, winnerXp:0, loserXp:0 }));
+    if (winner) winner.inBattle = false;
+    if (loser) loser.inBattle = false;
+    battles.delete(bId);
+    await pushLobby();
+    return;
+  }
 
   if (isTraining) {
     const winnerXp = forfeit ? 0 : 100 + Math.max(0, Math.min(100, winnerHp));

@@ -3,7 +3,12 @@
 const PHYSICAL_CODES = {
   'IRON-001': 'irondog',
   'IRON-002': 'irondog',
-  'IRON-TEST': 'irondog'
+  'IRON-TEST': 'irondog',
+  
+  // NUEVO: Tunqui - Guardián Amazónico
+  'TUNQ-001': 'tunqui',
+  'TUNQ-002': 'tunqui',
+  'TUNQ-TEST': 'tunqui'
 };
 
 module.exports = { PHYSICAL_CODES };

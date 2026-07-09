@@ -1,7 +1,7 @@
 const BEASTS = require('./beasts.js');
 const { lobby, battles, pushCpuBattle } = require('./state');
 const { applyAtk, tickEffects, endBattle } = require('./battleEngine');
-const { cpuPickAttack } = require('./cpuAI'); // NUEVO: Importar IA unificada
+const { cpuPickAttack } = require('./cpuAI');
 
 const CPU_ID = -1;
 
@@ -12,11 +12,11 @@ async function checkCpuDeath(bId) {
   const plId  = b.cpuIsP1 ? b.p2id : b.p1id;
   
   if (cpuSt.hp <= 0) { 
-    await endBattle(bId, plId, CPU_ID, Math.max(0, plSt.hp)); 
+    await endBattle(bId, plId, CPU_ID, Math.max(0, plSt.hp), b.isLabSimulation); 
     return true; 
   }
   if (plSt.hp <= 0) { 
-    await endBattle(bId, CPU_ID, plId, Math.max(0, cpuSt.hp)); 
+    await endBattle(bId, CPU_ID, plId, Math.max(0, cpuSt.hp), b.isLabSimulation); 
     return true; 
   }
   return false;
@@ -47,7 +47,7 @@ async function doCpuTurn(bId) {
     cpuSt.recharge--; 
     b.logs.push({t: `Zodiac Master recargando...`, c: 'special'}); 
   } else {
-    const idx = cpuPickAttack(cpuSt, plSt, b.cpuBeast); // USA IA UNIFICADA
+    const idx = cpuPickAttack(cpuSt, plSt, b.cpuBeast);
     const atk = BEASTS[b.cpuBeast].attacks[idx];
     if (cpuSt.pp[idx] < 99) cpuSt.pp[idx]--;
     b.logs.push(...applyAtk(cpuSt, plSt, atk, 'Zodiac Master'));
@@ -84,7 +84,8 @@ async function processCpuPlayerTurn(bId, playerId, atkIndex) {
     plSt.recharge--; 
     b.logs.push({t: `${pl.name} recargando...`, c: 'special'}); 
   } else if (atkIndex >= 0) {
-    const atks = BEASTS[pl.beast]?.attacks;
+    // FIX: Si es batalla de laboratorio, leemos los ataques del objeto customBeast
+    const atks = b.customBeast ? b.customBeast.attacks : BEASTS[pl.beast]?.attacks;
     const atk = atks?.[atkIndex]; if (!atk) return;
     if (plSt.pp[atkIndex] <= 0) {
       b.logs.push({t: `${pl.name} intentó usar ${atk.n} pero no tiene PP. ¡Turno perdido!`, c: 'bad'});

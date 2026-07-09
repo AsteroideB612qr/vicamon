@@ -89,6 +89,13 @@ const BEASTS = {
       {n:'Sobrecarga Reactor',  d:38, acc:85,  self:8,  fx:null,       risk:true,    pp:4,  desc:'Sobrecarga el núcleo para un golpe devastador. Te inflige 8 HP por el retroceso.'},
       {n:'Escudo Electromagnético', d:0, acc:100, self:0, fx:'shield1r', buff:true,  pp:3,  desc:'Genera un escudo de 1 turno que refleja 15 HP al atacante.'},
       {n:'Rastreo Láser',       d:10, acc:100, self:0,  fx:'blind',     debuff:true, pp:4,  desc:'Un rayo láser que daña la visión del rival, cegándolo por 2 turnos.'},
+    ]},
+  tunqui:     {name:'Tunqui',     cat:'Físico',  sub:'Guardián Amazónico',  img:'Tunqui.png',     el:'aire',  style:'caos', stats: {atk:75, def:65, spd:85},
+    attacks:[
+      {n:'Golpe Rápido',        d:15, acc:100, self:0,  fx:'double',                 pp:10, desc:'Golpea dos veces seguidas.'},
+      {n:'Lanzallamas',         d:18, acc:100, self:0,  fx:'burn',      dot:true,    pp:5,  desc:'Daño + Quema al rival (6 HP/turno por 2 turnos).'},
+      {n:'Drenaje',             d:15, acc:100, self:0,  fx:'drain10',                pp:5,  desc:'Daña 15 HP y te cura 10 HP.'},
+      {n:'Escudo',              d:0,  acc:100, self:0,  fx:'shield2',   buff:true,   pp:5,  desc:'Bloquea los próximos 2 ataques.'},
     ]}
 };
 

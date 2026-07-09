@@ -1,27 +1,69 @@
 const BEASTS = require('./beasts.js');
-const BEAST_KEYS = Object.keys(BEASTS);
 const { lobby, battles, pushCpuBattle, broadcast, send, pushLobby } = require('./state');
 const { applyAtk, tickEffects, getStartState } = require('./battleEngine');
-const { settleGauntlet, getPlayerStats, getPlayerRank, getTopPlayers } = require('./hp-balance');
-const { cpuPickAttack } = require('./cpuAI'); // NUEVO: Importar IA unificada
+const { settleGauntletTiered, getPlayerStats, getPlayerRank, getTopPlayers, calculateGauntletReward } = require('./hp-balance');
+const { cpuPickAttack } = require('./cpuAI');
 
 const CPU_ID = -1;
 const CPU_NAME = 'Zodiac Master';
 
-async function endGauntlet(bId, playerId, won) {
+async function endGauntlet(bId, playerId, won, defeatedCount = 0) {
   const b = battles.get(bId);
   const pl = lobby.get(playerId);
   if (!pl) return;
-  const wallet = pl.wallet;
-  const newHp = await settleGauntlet(wallet, won);
-  const stats = await getPlayerStats(wallet);
-  const rank = await getPlayerRank(wallet);
-  send(pl.ws, { type:'battle_end', won, isGauntlet: true, newHp, stats: { wins: stats.wins, losses: stats.losses, rank } });
-  pl.inBattle = false;
+  
+  const isGuest = pl.isGuest || false;
+  let newHp = 0;
+  let reward = 0;
+  let myXp = 0;
+  let stats = { wins: 0, losses: 0, rank: null };
+
+  try {
+    const finalDefeated = won ? 12 : defeatedCount;
+    reward = calculateGauntletReward(finalDefeated); // Calculamos la recompensa base
+
+    if (!isGuest) {
+      const result = await settleGauntletTiered(pl.wallet, finalDefeated);
+      newHp = result.newHp;
+      reward = result.reward; // Confirmamos la recompensa real de la DB
+      
+      const dbStats = await getPlayerStats(pl.wallet);
+      if (dbStats) { stats.wins = dbStats.wins; stats.losses = dbStats.losses; }
+      stats.rank = await getPlayerRank(pl.wallet);
+    } else {
+      // CORREGIDO: El XP del invitado es exactamente el balance neto (pérdida o ganancia)
+      myXp = Math.abs(100 - reward);
+    }
+  } catch (error) {
+    console.error("Error en endGauntlet guardando datos:", error);
+  }
+
+  try {
+    send(pl.ws, { 
+      type:'battle_end', 
+      won, 
+      isGauntlet: true, 
+      newHp, 
+      reward, 
+      defeated: won ? 12 : defeatedCount, 
+      isGuest,
+      myXp,
+      stats 
+    });
+  } catch (e) {
+    console.error("Error al enviar mensaje de fin de gauntlet:", e);
+  }
+  
+  if (pl) pl.inBattle = false;
   battles.delete(bId);
   await pushLobby();
-  const top = await getTopPlayers(3);
-  broadcast({ type: 'leaderboard_update', top });
+  
+  if (!isGuest) {
+    try {
+      const top = await getTopPlayers(3);
+      broadcast({ type: 'leaderboard_update', top });
+    } catch (e) {}
+  }
 }
 
 async function checkGauntletCpuDeath(bId) {
@@ -33,16 +75,18 @@ async function checkGauntletCpuDeath(bId) {
   if (cpuSt.hp <= 0) {
     b.turnId = -2; 
     pushCpuBattle(bId); 
-    setTimeout(() => {
+    setTimeout(async () => {
       try {
         const bb = battles.get(bId); if (!bb) return;
         bb.gauntletIndex++;
-        if (bb.gauntletIndex >= BEAST_KEYS.length) {
-          endGauntlet(bId, plId, true);
+        
+        if (bb.gauntletIndex >= 12 || bb.gauntletIndex >= bb.gauntletTeam.length) {
+          await endGauntlet(bId, plId, true, 12);
         } else {
           const pl = lobby.get(plId);
-          if (!pl) return endGauntlet(bId, plId, false);
-          bb.cpuBeast = BEAST_KEYS[bb.gauntletIndex];
+          if (!pl) return endGauntlet(bId, plId, false, bb.gauntletIndex);
+          
+          bb.cpuBeast = bb.gauntletTeam[bb.gauntletIndex];
           bb.st1 = getStartState(bb.cpuBeast);
           bb.turnId = CPU_ID; 
           bb.logs.push({t:`¡Jefe derrotado! Prepárate para ${BEASTS[bb.cpuBeast].name} (${bb.gauntletIndex+1}/12). HP restaurado.`, c:'good'});
@@ -52,11 +96,16 @@ async function checkGauntletCpuDeath(bId) {
     }, 1500); 
     return true;
   }
+  
   if (plSt.hp <= 0) {
     b.turnId = -2;
     pushCpuBattle(bId);
-    setTimeout(() => {
-      try { endGauntlet(bId, plId, false); } catch(e) { console.error("Gauntlet loss error:", e); }
+    setTimeout(async () => {
+      try { 
+        const bb = battles.get(bId); 
+        if (!bb) return;
+        await endGauntlet(bId, plId, false, bb.gauntletIndex);
+      } catch(e) { console.error("Gauntlet loss error:", e); }
     }, 1500);
     return true;
   }
@@ -88,7 +137,7 @@ async function doGauntletCpuTurn(bId) {
     cpuSt.recharge--; 
     b.logs.push({t: `${CPU_NAME} recargando...`, c: 'special'}); 
   } else {
-    const idx = cpuPickAttack(cpuSt, plSt, b.cpuBeast); // USA IA UNIFICADA
+    const idx = cpuPickAttack(cpuSt, plSt, b.cpuBeast);
     const atk = BEASTS[b.cpuBeast].attacks[idx];
     if (cpuSt.pp[idx] < 99) cpuSt.pp[idx]--;
     b.logs.push(...applyAtk(cpuSt, plSt, atk, CPU_NAME));

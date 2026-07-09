@@ -29,12 +29,10 @@ async function connectPhantom() {
   if (!phantom || !phantom.isPhantom) {
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent); 
     if (isMobile) { 
-      // NUEVO: Usar el modal universal en móvil
       document.getElementById('mobile-url-display').textContent = window.location.href;
       document.getElementById('modal-mobile-connect').classList.remove('hidden');
       return; 
     }
-    // Escritorio sin Phantom
     document.getElementById('no-phantom').style.display='block'; 
     document.getElementById('no-phantom').innerHTML = 'Phantom no detectado. <a href="https://phantom.app" target="_blank" style="color:#F0997B;text-decoration:underline">Instalalo aqui</a>.'; 
     document.getElementById('btn-phantom').style.display='none'; 
@@ -48,12 +46,8 @@ async function connectPhantom() {
   } catch(e) { console.error('Phantom error:', e); alert('No se pudo conectar Phantom.'); }
 }
 
-// NUEVAS: Funciones para el modal móvil
 function openPhantomApp() {
-  // Cerrar sesión de invitado para evitar duplicados en el servidor
-  if(isGuest && typeof ws !== 'undefined' && ws) { 
-    try { ws.close(); } catch(e) {} 
-  }
+  if(isGuest && typeof ws !== 'undefined' && ws) { try { ws.close(); } catch(e) {} }
   const currentUrl = window.location.href;
   const deepLink = `https://phantom.app/ul/browse/${currentUrl}`;
   window.location.href = deepLink;
@@ -76,9 +70,35 @@ async function checkHPNow(fromConnect=false) { if (!myWallet || isGuest) return;
 
 function updateProfileUI(stats) { if (stats) myStats = stats; const nameEl = document.getElementById('profile-name'); if (nameEl) { nameEl.textContent = myName || 'Jugador'; document.getElementById('profile-wallet').textContent = isGuest ? 'Modo Invitado (Sin Wallet)' : (myWallet ? myWallet.slice(0,8)+'...'+myWallet.slice(-6) : 'Desconectado'); document.getElementById('profile-wallet-box').style.display = isGuest ? 'none' : 'block'; document.getElementById('profile-wins').textContent = myStats.wins || 0; document.getElementById('profile-losses').textContent = myStats.losses || 0; document.getElementById('profile-rank').textContent = myStats.rank ? '#' + myStats.rank : 'Sin clasificado'; document.getElementById('guest-upgrade-banner').style.display = isGuest ? 'block' : 'none'; } }
 
-function updateHPDisplay(hp){ if(isGuest) hp = 0; myCurrentHP = hp || 0; const el=document.getElementById('pick-hp-val'); if(el){ el.textContent=hp+' HP'; el.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } const loginHp=document.getElementById('wallet-hp'); if(loginHp){ loginHp.textContent=hp+' HP'; loginHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } const profHp=document.getElementById('profile-hp'); if(profHp){ profHp.textContent=hp+' HP'; profHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } const profUsdc=document.getElementById('profile-usdc'); if(profUsdc){ profUsdc.textContent=(hp*0.001).toFixed(3)+' USDC'; } const btn=document.getElementById('btn-cashout'); if(btn){ btn.style.display=hp>0 && !isGuest?'inline-block':'none'; btn.disabled=false; btn.textContent='💰 Cashout'; } const btnG = document.getElementById('btn-gauntlet'); if (btnG && typeof GAUNTLET_HABILITADO !== 'undefined') { btnG.style.display = 'inline-block'; btnG.disabled = isGuest || myCurrentHP < 100; } const lobbyWidget = document.getElementById('lobby-deposit-widget'); if(lobbyWidget) lobbyWidget.innerHTML = depositWidgetHTML(); const profWidget = document.getElementById('profile-deposit-widget'); if(profWidget) profWidget.innerHTML = depositWidgetHTML(); if(document.getElementById('s-lobby')?.classList.contains('active')){ renderLobbyFromCache(); updateLobbyBadge(); } }
+// FIX: Habilitar torre para invitados y sincronizar HP en el Laboratorio
+function updateHPDisplay(hp){ if(isGuest) hp = 0; myCurrentHP = hp || 0; const el=document.getElementById('pick-hp-val'); if(el){ el.textContent=hp+' HP'; el.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } const loginHp=document.getElementById('wallet-hp'); if(loginHp){ loginHp.textContent=hp+' HP'; loginHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } const profHp=document.getElementById('profile-hp'); if(profHp){ profHp.textContent=hp+' HP'; profHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } const profUsdc=document.getElementById('profile-usdc'); if(profUsdc){ profUsdc.textContent=(hp*0.001).toFixed(3)+' USDC'; } const btn=document.getElementById('btn-cashout'); if(btn){ btn.style.display=hp>0 && !isGuest?'inline-block':'none'; btn.disabled=false; btn.textContent='💰 Cashout'; } const btnG = document.getElementById('btn-gauntlet'); if (btnG && typeof GAUNTLET_HABILITADO !== 'undefined') { btnG.style.display = 'inline-block'; if (isGuest) { btnG.disabled = false; btnG.textContent = '🏰 Torre (XP)'; } else { btnG.disabled = myCurrentHP < 100; btnG.textContent = '🏰 Torre (100 HP)'; } } const lobbyWidget = document.getElementById('lobby-deposit-widget'); if(lobbyWidget) lobbyWidget.innerHTML = depositWidgetHTML(); const profWidget = document.getElementById('profile-deposit-widget'); if(profWidget) profWidget.innerHTML = depositWidgetHTML(); if(document.getElementById('s-lobby')?.classList.contains('active')){ renderLobbyFromCache(); updateLobbyBadge(); }
+  
+  // NUEVO: Sincronizar HP y Widget de depósito en el Laboratorio
+  const labHp = document.getElementById('lab-hp-val');
+  if(labHp) {
+      labHp.textContent = isGuest ? 'Invitado' : (myCurrentHP + ' HP');
+      labHp.style.color = myCurrentHP >= 500 ? '#5DCAA5' : '#EF9F27';
+  }
+  const labWidget = document.getElementById('lab-deposit-widget');
+  if(labWidget) labWidget.innerHTML = depositWidgetHTML();
+  
+  // Si estamos en el laboratorio, recalcular el balance para habilitar/deshabilitar el botón
+  if (typeof calculateLabBalance === 'function') calculateLabBalance();
+}
 
 async function doCashout(){ if(isGuest) return alert('Los invitados no pueden hacer cashout.'); const btn=document.getElementById('btn-cashout'); if(btn){btn.disabled=true;btn.textContent='Procesando...';} if(!ws || ws.readyState !== 1){ if(btn){btn.disabled=false;btn.textContent='💰 Cashout';} return; } ws.send(JSON.stringify({type:'cashout'})); }
+
+function challengeGauntlet() { 
+  if(!ws || ws.readyState !== 1) return alert('Conectando...'); 
+  if(!isGuest && myCurrentHP < 100) return alert('Necesitas al menos 100 HP para entrar a la Torre de Batalla.'); 
+  if(!confirm(isGuest ? '¿Iniciar la Torre de Batalla (Modo Invitado - Solo XP)?' : '¿Iniciar la Torre de Batalla? (Inviertes 100 HP)')) return; 
+  isGauntletChallenge = true; 
+  teamSelectionMode = '1v1'; 
+  document.getElementById('ts-mode-title').textContent = isGuest ? 'Torre de Batalla (Invitado)' : 'Torre de Batalla (Elige tu inicial)'; 
+  selectedTeam = []; 
+  buildTeamPickGrid(); 
+  show('s-team-select'); 
+}
 
 function redeemPhysicalCode() { const input = document.getElementById('inp-physical-code'); const code = input.value.trim(); if(!code) return; if(ws && ws.readyState === 1) ws.send(JSON.stringify({type:'redeem_physical_code', code: code})); input.value = ''; }
 function autoRedeemPhysicalCodes() { const codes = JSON.parse(localStorage.getItem('vicamon_physical_codes') || '[]'); codes.forEach(code => { if(ws && ws.readyState === 1) ws.send(JSON.stringify({type:'redeem_physical_code', code: code})); }); }
