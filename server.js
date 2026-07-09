@@ -5,10 +5,10 @@ const { WebSocketServer } = require('ws');
 
 const {
   getHP, addHP, isTxProcessed, markTxProcessed,
-  getPlatformHp, getPlatformUsdc, clearPlatformHp, // Añadido getPlatformHp
+  getPlatformHp, getPlatformUsdc, clearPlatformHp, setPlatformHp,
   PLATFORM_WALLET, PLATFORM_THRESHOLD, USDC_PER_HP,
   getAllPlayersDebug, adminSetHP, adminResetPlatform, adminUnlockAllHP,
-  getPlayerStats, getPlayerRank // Añadido para la ruta /hp
+  getPlayerStats, getPlayerRank, getTotalPlayersHP, getExcedente
 } = require('./hp-balance');
 const { sendUSDC } = require('./transfer');
 
@@ -52,14 +52,42 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // FIX: Usar getPlatformHp() en lugar de getPlatformUsdc() para mostrar los HP reales
-  if (urlPath === '/admin-data') { const pass = new URL(req.url, 'http://localhost').searchParams.get('pass') || ''; if (pass !== ADMIN_PASS) { res.writeHead(403); res.end('Forbidden'); return; } try { const players = await getAllPlayersDebug(); const platformHp = await getPlatformHp(); res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ players, platformHp })); } catch(e) { res.writeHead(500); res.end('Error'); } return; }
+  // MODIFICADO: Sincroniza DB con wallet real y devuelve métricas de tesorería
+  if (urlPath === '/admin-data') { 
+    const pass = new URL(req.url, 'http://localhost').searchParams.get('pass') || ''; 
+    if (pass !== ADMIN_PASS) { res.writeHead(403); res.end('Forbidden'); return; } 
+    try { 
+      const realUsdc = await getPlatformUSDCBalance(); 
+      const realHp = Math.floor(realUsdc / USDC_PER_HP); 
+      await setPlatformHp(realHp); // Sincroniza el HP en la DB con el balance real de la wallet
+      
+      const players = await getAllPlayersDebug(); 
+      const platformHp = realHp; 
+      const playersTotalHp = await getTotalPlayersHP(); 
+      const excedente = platformHp - playersTotalHp; 
+      
+      res.writeHead(200, { 'Content-Type': 'application/json' }); 
+      res.end(JSON.stringify({ 
+        players, 
+        platformHp, 
+        platformUsdc: realUsdc, 
+        playersTotalHp, 
+        playersTotalUsdc: playersTotalHp * USDC_PER_HP, 
+        excedente, 
+        excedenteUsdc: excedente * USDC_PER_HP 
+      })); 
+    } catch(e) { 
+      console.error("Admin data error:", e);
+      res.writeHead(500); res.end('Error'); 
+    } 
+    return; 
+  }
+  
   if (urlPath === '/admin-update-hp' && req.method === 'POST') { let body = ''; req.on('data', c => body += c); req.on('end', async () => { try { const { pass, wallet, hp } = JSON.parse(body); if (pass !== ADMIN_PASS) { res.writeHead(403); res.end(JSON.stringify({ ok: false })); return; } await adminSetHP(wallet, parseInt(hp)); res.writeHead(200); res.end(JSON.stringify({ ok: true })); } catch(e) { res.writeHead(400); res.end(JSON.stringify({ ok: false })); } }); return; }
   if (urlPath === '/admin-reset-platform' && req.method === 'POST') { let body = ''; req.on('data', c => body += c); req.on('end', async () => { try { const { pass } = JSON.parse(body); if (pass !== ADMIN_PASS) { res.writeHead(403); res.end(JSON.stringify({ ok: false })); return; } await adminResetPlatform(); res.writeHead(200); res.end(JSON.stringify({ ok: true })); } catch(e) { res.writeHead(400); res.end(JSON.stringify({ ok: false })); } }); return; }
   if (urlPath === '/admin-unlock-hp' && req.method === 'POST') { let body = ''; req.on('data', c => body += c); req.on('end', async () => { try { const { pass } = JSON.parse(body); if (pass !== ADMIN_PASS) { res.writeHead(403); res.end(JSON.stringify({ ok: false })); return; } await adminUnlockAllHP(); res.writeHead(200); res.end(JSON.stringify({ ok: true })); } catch(e) { res.writeHead(400); res.end(JSON.stringify({ ok: false })); } }); return; }
   if (urlPath === '/admin-withdraw' && req.method === 'POST') { let body = ''; req.on('data', c => body += c); req.on('end', async () => { try { const { pass } = JSON.parse(body); if (pass !== ADMIN_PASS) { res.writeHead(403); res.end(JSON.stringify({ ok: false, msg: 'Forbidden' })); return; } if (!OWNER_WALLET) { res.writeHead(400); res.end(JSON.stringify({ ok: false, msg: 'OWNER_WALLET no configurada en el servidor' })); return; } const balance = await getPlatformUSDCBalance(); if (balance <= 0.001) { res.writeHead(400); res.end(JSON.stringify({ ok: false, msg: 'No hay suficientes USDC para retirar' })); return; } const sig = await sendUSDC(OWNER_WALLET, balance); const hpToClear = Math.round(balance / USDC_PER_HP); await clearPlatformHp(hpToClear); res.writeHead(200); res.end(JSON.stringify({ ok: true, amount: balance, sig })); } catch(e) { res.writeHead(500); res.end(JSON.stringify({ ok: false, msg: e.message })); } }); return; }
 
-  // FIX: Limpieza en la ruta /hp
   if (urlPath === '/hp') { 
     const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet') || ''; 
     if (wallet.startsWith('guest_')) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ hp: 0, wallet, stats: { wins: 0, losses: 0, rank: null } })); return; } 

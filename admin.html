@@ -9,34 +9,60 @@
     input,button{background:#1a1a24;border:1px solid #333;color:#fff;padding:10px;border-radius:8px;outline:none}
     button{cursor:pointer;background:#4a9eff;border:none;font-weight:bold}
     button:disabled{opacity:.5;cursor:not-allowed}
-    .plat-info{background:#14141e;padding:15px;border-radius:12px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}
-    .plat-info span{font-size:14px;color:#85B7EB}
-    .plat-info b{font-size:18px;color:#5DCAA5}
-    table{width:100%;border-collapse:collapse;background:#14141e;border-radius:12px;overflow:hidden}
+    
+    /* Nuevas tarjetas de métricas */
+    .metrics-grid{display:grid;grid-template-columns:repeat(3, 1fr);gap:15px;margin-bottom:20px}
+    .metric-card{background:#14141e;padding:15px;border-radius:12px;border:1px solid #2a2a35;text-align:center;transition:all .3s}
+    .metric-title{font-size:12px;color:#85B7EB;text-transform:uppercase;margin-bottom:10px;letter-spacing:.05em}
+    .metric-value{font-size:24px;font-weight:bold;color:#fff;margin-bottom:5px}
+    .metric-sub{font-size:14px;color:#aaa}
+    .status-red{border-color:#F0997B !important;box-shadow:0 0 12px rgba(240,153,122,.2)}
+    .status-green{border-color:#5DCAA5 !important;box-shadow:0 0 12px rgba(93,202,165,.2)}
+    .text-red{color:#F0997B !important}
+    .text-green{color:#5DCAA5 !important}
+
+    .admin-actions{margin-top:20px;display:flex;gap:10px;flex-wrap:wrap}
+    .btn-withdraw{background:#F5A623;color:#000;padding:10px 20px;font-size:14px}
+    
+    table{width:100%;border-collapse:collapse;background:#14141e;border-radius:12px;overflow:hidden;margin-top:20px}
     th,td{padding:12px;border-bottom:1px solid #2a2a35;text-align:left;font-size:14px}
     th{color:#85B7EB;text-transform:uppercase;font-size:12px}
     td input{width:80px;padding:5px;background:#111;border:1px solid #333;text-align:center;color:#fff;border-radius:4px}
     .btn-save{background:#5DCAA5;padding:8px 16px;color:#000}
-    .admin-actions{margin-top:20px;display:flex;gap:10px;flex-wrap:wrap}
-    .btn-withdraw{background:#F5A623;color:#000;padding:10px 20px;font-size:14px}
   </style>
 </head>
 <body>
   <h1>Panel de Administración</h1>
   <div class="header">
-    <input type="password" id="pass" placeholder="Contraseña de admin">
-    <button onclick="loadData()">Desbloquear y Cargar</button>
+    <input type="password" id="pass" placeholder="Contraseña de admin" style="flex:1">
+    <button onclick="loadData()">Desbloquear y Sincronizar</button>
   </div>
-  <div class="plat-info" id="plat-info" style="display:none">
-    <span>HP Ganados por la Plataforma (Comisiones):</span>
-    <b id="plat-hp">-</b>
+
+  <!-- TABLERO DE TESORERÍA -->
+  <div class="metrics-grid">
+    <div class="metric-card" id="wallet-card">
+      <div class="metric-title">Wallet Plataforma (Real)</div>
+      <div class="metric-value" id="wallet-hp">0 HP</div>
+      <div class="metric-sub" id="wallet-usdc">0.000 USDC</div>
+    </div>
+    <div class="metric-card" id="players-card">
+      <div class="metric-title">Deuda Jugadores</div>
+      <div class="metric-value" id="players-hp">0 HP</div>
+      <div class="metric-sub" id="players-usdc">0.000 USDC</div>
+    </div>
+    <div class="metric-card" id="excedente-card">
+      <div class="metric-title">Excedente (Ganancia)</div>
+      <div class="metric-value" id="excedente-hp">0 HP</div>
+      <div class="metric-sub" id="excedente-usdc">0.000 USDC</div>
+    </div>
   </div>
-  <div class="admin-actions" id="admin-btns" style="display:none">
+
+  <div class="admin-actions">
     <button onclick="withdrawFunds()" id="btn-withdraw" class="btn-withdraw">💸 Retirar Ganancias a Wallet</button>
     <button onclick="resetPlatformHP()">Resetear HP Plataforma</button>
     <button onclick="unlockAllHP()">Desbloquear HP de todos</button>
   </div>
-  <br><br>
+
   <table id="tbl" style="display:none">
     <thead>
       <tr><th>Wallet</th><th>Nickname</th><th>HP</th><th>HP Bloqueados</th><th>Acción</th></tr>
@@ -46,34 +72,87 @@
 
   <script>
     let globalPass='';
+
     async function loadData(){
       globalPass=document.getElementById('pass').value;
       if(!globalPass) return alert('Ingresa la contraseña');
       const res=await fetch('/admin-data?pass='+encodeURIComponent(globalPass));
       if(!res.ok){ alert('Contraseña incorrecta'); return; }
       const data=await res.json();
-      document.getElementById('plat-info').style.display='flex';
+      
+      // Mostrar tabla
       document.getElementById('tbl').style.display='table';
-      document.getElementById('admin-btns').style.display='flex';
-      document.getElementById('plat-hp').textContent=data.platformHp+' HP ('+(data.platformHp*0.001).toFixed(3)+' USDC)';
+      
+      // Actualizar tarjetas
+      const wHp = document.getElementById('wallet-hp');
+      const wUsdc = document.getElementById('wallet-usdc');
+      const pHp = document.getElementById('players-hp');
+      const pUsdc = document.getElementById('players-usdc');
+      const eHp = document.getElementById('excedente-hp');
+      const eUsdc = document.getElementById('excedente-usdc');
+      const wCard = document.getElementById('wallet-card');
+      const pCard = document.getElementById('players-card');
+      const eCard = document.getElementById('excedente-card');
+
+      wHp.textContent = data.platformHp + ' HP';
+      wUsdc.textContent = data.platformUsdc.toFixed(4) + ' USDC';
+      pHp.textContent = data.playersTotalHp + ' HP';
+      pUsdc.textContent = data.playersTotalUsdc.toFixed(4) + ' USDC';
+      eHp.textContent = data.excedente + ' HP';
+      eUsdc.textContent = data.excedenteUsdc.toFixed(4) + ' USDC';
+
+      // Colores Deuda Jugadores (Rojo si es mayor a la wallet)
+      if(data.playersTotalHp > data.platformHp) {
+        pCard.classList.add('status-red'); pCard.classList.remove('status-green');
+        pHp.classList.add('text-red'); pHp.classList.remove('text-green');
+      } else {
+        pCard.classList.add('status-green'); pCard.classList.remove('status-red');
+        pHp.classList.add('text-green'); pHp.classList.remove('text-red');
+      }
+
+      // Colores Excedente (Rojo si es negativo)
+      if(data.excedente < 0) {
+        eCard.classList.add('status-red'); eCard.classList.remove('status-green');
+        eHp.classList.add('text-red'); eHp.classList.remove('text-green');
+      } else {
+        eCard.classList.add('status-green'); eCard.classList.remove('status-red');
+        eHp.classList.add('text-green'); eHp.classList.remove('text-red');
+      }
+
+      // Colores Wallet (Rojo si es menor a la suma de deuda + excedente)
+      const totalEsperado = data.playersTotalHp + data.excedente;
+      if(data.platformHp < totalEsperado) {
+        wCard.classList.add('status-red'); wCard.classList.remove('status-green');
+        wHp.classList.add('text-red'); wHp.classList.remove('text-green');
+      } else {
+        wCard.classList.add('status-green'); wCard.classList.remove('status-red');
+        wHp.classList.add('text-green'); wHp.classList.remove('text-red');
+      }
+
+      // Poblar tabla de jugadores
       document.getElementById('data').innerHTML=data.players.map(p=>'<tr><td>'+p.wallet.slice(0,8)+'...'+p.wallet.slice(-4)+'</td><td>'+(p.last_name||'-')+'</td><td><input type="number" value="'+p.hp+'" id="hp-'+p.wallet+'"></td><td>'+(p.locked_hp||0)+'</td><td><button class="btn-save" onclick="saveHP(\''+p.wallet+'\')">Guardar</button></td></tr>').join('');
     }
+
     async function saveHP(wallet){
       const hp=document.getElementById('hp-'+wallet).value;
       const res=await fetch('/admin-update-hp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pass:globalPass,wallet,hp:parseInt(hp)})});
       const data=await res.json();
-      if(data.ok) alert('✓ HP actualizado a '+hp); else alert('Error al aggiornare');
+      if(data.ok) { alert('✓ HP actualizado a '+hp); loadData(); } 
+      else { alert('Error al actualizar'); }
     }
+
     async function resetPlatformHP(){
-      if(!confirm('¿Resetear los HP de la plataforma a 0?')) return;
+      if(!confirm('¿Resetear el HP de la plataforma a 0?')) return;
       const res=await fetch('/admin-reset-platform',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pass:globalPass})});
-      if(res.ok) alert('✓ HP de la plataforma reseteados.');
+      if(res.ok) { alert('✓ HP de la plataforma reseteado.'); loadData(); }
     }
+
     async function unlockAllHP(){
       if(!confirm('¿Desbloquear todos los HP de jugadores?')) return;
       const res=await fetch('/admin-unlock-hp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pass:globalPass})});
-      if(res.ok) alert('✓ HP desbloqueados.');
+      if(res.ok) { alert('✓ HP desbloqueados.'); loadData(); }
     }
+
     async function withdrawFunds(){
       const btn=document.getElementById('btn-withdraw');
       if(!confirm('¿Retirar TODOS los USDC de la plataforma a tu wallet personal?')) return;

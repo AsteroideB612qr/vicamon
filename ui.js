@@ -30,18 +30,69 @@ function toggleTeamBeast(k) { const maxPicks = teamSelectionMode === '3v3' ? 3 :
 function updateTeamSelectionUI() { const maxPicks = teamSelectionMode === '3v3' ? 3 : 1; document.querySelectorAll('#team-pick-grid .bcard').forEach(c => c.classList.remove('sel')); selectedTeam.forEach((k, i) => { const card = document.getElementById('tpc-'+k); if(card) { card.classList.add('sel'); let badge = card.querySelector('.team-badge'); if(!badge) { badge = document.createElement('div'); badge.className = 'team-badge'; badge.style.cssText = 'position:absolute;top:2px;right:2px;background:#4a9eff;color:#fff;width:16px;height:16px;border-radius:50%;font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:bold'; card.appendChild(badge); } badge.textContent = i + 1; } }); document.querySelectorAll('#team-pick-grid .bcard').forEach(c => { if(!c.classList.contains('sel')) { const badge = c.querySelector('.team-badge'); if(badge) badge.remove(); } }); document.getElementById('btn-confirm-team').disabled = selectedTeam.length !== maxPicks; }
 function cancelTeamSelection() { if(pendingFrom !== null) { ws.send(JSON.stringify({type:'reject_challenge'})); pendingFrom = null; } isGauntletChallenge = false; show('s-lobby'); }
 
-function confirmTeam() { if (isGauntletChallenge) { myBeast = selectedTeam[0]; ws.send(JSON.stringify({type:'challenge_gauntlet', beast: myBeast})); isGauntletChallenge = false; show('s-lobby'); return; } let isTraining; if (pendingFrom !== null) { isTraining = pendingIsTraining; } else { isTraining = pendingIsTraining || pendingChallengeTargetId === null; } const mode3v3 = teamSelectionMode === '3v3'; if(mode3v3) { myTeam = selectedTeam.slice(); } else { myBeast = selectedTeam[0]; myTeam = [myBeast]; } if(ws && ws.readyState === 1) { if(!mode3v3) ws.send(JSON.stringify({type:'change_beast', beast: myBeast})); } if(pendingFrom !== null) { if(mode3v3) ws.send(JSON.stringify({type:'accept_3v3', fromId: pendingFrom, team: myTeam, isTraining: isTraining})); else ws.send(JSON.stringify({type:'accept', fromId: pendingFrom, isTraining: isTraining})); pendingFrom = null; pendingIs3v3 = false; pendingIsTraining = false; } else if(pendingChallengeTargetId !== null) { if(mode3v3 && isTraining) ws.send(JSON.stringify({type:'challenge_3v3_training', targetId: pendingChallengeTargetId, team: myTeam})); else if(mode3v3) ws.send(JSON.stringify({type:'challenge_3v3', targetId: pendingChallengeTargetId, team: myTeam})); else if(isTraining) ws.send(JSON.stringify({type:'challenge_training', targetId: pendingChallengeTargetId})); else ws.send(JSON.stringify({type:'challenge', targetId: pendingChallengeTargetId})); pendingChallengeTargetId = null; pendingIsTraining = false; } else if(isTraining) { if(mode3v3) ws.send(JSON.stringify({type:'challenge_3v3_cpu', team: myTeam})); else ws.send(JSON.stringify({type:'challenge_cpu'})); } show('s-lobby'); }
+function confirmTeam() { 
+  if (isGauntletChallenge) { 
+    myBeast = selectedTeam[0]; 
+    ws.send(JSON.stringify({type:'challenge_gauntlet', beast: myBeast, towerMode: window._pendingTowerMode || 'hp'})); 
+    isGauntletChallenge = false; 
+    window._pendingTowerMode = null;
+    show('s-lobby'); 
+    return; 
+  } 
+  let isTraining; 
+  if (pendingFrom !== null) { isTraining = pendingIsTraining; } else { isTraining = pendingIsTraining || pendingChallengeTargetId === null; } 
+  const mode3v3 = teamSelectionMode === '3v3'; 
+  if(mode3v3) { myTeam = selectedTeam.slice(); } else { myBeast = selectedTeam[0]; myTeam = [myBeast]; } 
+  if(ws && ws.readyState === 1) { if(!mode3v3) ws.send(JSON.stringify({type:'change_beast', beast: myBeast})); } 
+  if(pendingFrom !== null) { if(mode3v3) ws.send(JSON.stringify({type:'accept_3v3', fromId: pendingFrom, team: myTeam, isTraining: isTraining})); else ws.send(JSON.stringify({type:'accept', fromId: pendingFrom, isTraining: isTraining})); pendingFrom = null; pendingIs3v3 = false; pendingIsTraining = false; } 
+  else if(pendingChallengeTargetId !== null) { if(mode3v3 && isTraining) ws.send(JSON.stringify({type:'challenge_3v3_training', targetId: pendingChallengeTargetId, team: myTeam})); else if(mode3v3) ws.send(JSON.stringify({type:'challenge_3v3', targetId: pendingChallengeTargetId, team: myTeam})); else if(isTraining) ws.send(JSON.stringify({type:'challenge_training', targetId: pendingChallengeTargetId})); else ws.send(JSON.stringify({type:'challenge', targetId: pendingChallengeTargetId})); pendingChallengeTargetId = null; pendingIsTraining = false; } 
+  else if(isTraining) { if(mode3v3) ws.send(JSON.stringify({type:'challenge_3v3_cpu', team: myTeam})); else ws.send(JSON.stringify({type:'challenge_cpu'})); } 
+  show('s-lobby'); 
+}
 
-function challengeGauntlet() { 
+function openTowerMenu() {
+  const modal = document.getElementById('modal-tower-menu');
+  const hpBtn = document.getElementById('btn-tower-hp');
+  const trainBtn = document.getElementById('btn-tower-train');
+  const guestBtn = document.getElementById('btn-tower-guest');
+  
+  hpBtn.style.display = 'none';
+  trainBtn.style.display = 'none';
+  guestBtn.style.display = 'none';
+  
+  if (isGuest) {
+    guestBtn.style.display = 'flex';
+  } else {
+    hpBtn.style.display = 'flex';
+    trainBtn.style.display = 'flex';
+  }
+  
+  modal.classList.remove('hidden');
+  
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({type:'get_tower_status'}));
+  }
+}
+
+function challengeGauntlet(towerMode) { 
+  document.getElementById('modal-tower-menu').classList.add('hidden');
   if(!ws || ws.readyState !== 1) return alert('Conectando...'); 
-  if(!isGuest && myCurrentHP < 100) return alert('Necesitas al menos 100 HP para entrar a la Torre de Batalla.'); 
-  if(!confirm(isGuest ? '¿Iniciar la Torre de Batalla (Modo Invitado - Solo XP)?' : '¿Iniciar la Torre de Batalla? (Inviertes 100 HP)')) return; 
+  if(towerMode === 'hp' && myCurrentHP < 100) return alert('Necesitas al menos 100 HP.');
+  
+  let msgText = '';
+  if(towerMode === 'hp') msgText = '¿Iniciar Torre por HP? (Inviertes 100 HP)';
+  else if(towerMode === 'training') msgText = '¿Iniciar Torre de Entrenamiento?';
+  else msgText = '¿Iniciar Torre (Invitado)?';
+  
+  if(!confirm(msgText)) return; 
   isGauntletChallenge = true; 
   teamSelectionMode = '1v1'; 
-  document.getElementById('ts-mode-title').textContent = isGuest ? 'Torre de Batalla (Invitado)' : 'Torre de Batalla (Elige tu inicial)'; 
+  document.getElementById('ts-mode-title').textContent = 'Torre de Batalla (Elige tu inicial)'; 
   selectedTeam = []; 
   buildTeamPickGrid(); 
   show('s-team-select'); 
+  
+  window._pendingTowerMode = towerMode;
 }
 
 function continueGauntlet() { document.getElementById('modal-gauntlet').classList.add('hidden'); const beastToUse = gauntletSelectedBeast || myBeast; ws.send(JSON.stringify({type:'gauntlet_continue', battleId: gauntletBattleId, beast: beastToUse})); myBeast = beastToUse; }
@@ -73,7 +124,6 @@ function renderBattle(yourTurn, logs){
     if (window._isTeamBattle && window._myBench) { let benchHtml = '<div style="display:flex;gap:4px;margin-top:8px;justify-content:center;">'; window._myBench.forEach(b => { const beast = BEASTS[b.beast]; const opacity = b.isDead ? 0.3 : 1; const border = b.isActive ? '2px solid #4a9eff' : '0.5px solid rgba(255,255,255,.1)'; benchHtml += `<img src="${beast.img}" style="width:30px;height:30px;border:${border};border-radius:4px;opacity:${opacity}">`; }); benchHtml += '</div>'; document.getElementById('f-me').innerHTML += benchHtml; } 
     const orb=document.getElementById('turn-orb'); if(orb) orb.style.display=yourTurn?'block':'none'; const locked=!yourTurn||mySt.stun||mySt.recharge>0; let tb = yourTurn ? '<span>Tu turno</span>' : 'Turno del rival...'; document.getElementById('turn-bar').innerHTML=tb; 
     
-    // FIX: Usar los datos del laboratorio si estamos en batalla de simulación
     const b = (myBeast === 'custom_lab_beast' && window._labBeastTemp) ? window._labBeastTemp : BEASTS[myBeast];
     
     let switchBtnHtml = ''; 
