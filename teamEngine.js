@@ -30,11 +30,9 @@ function pushTeamCpuBattle(bId) {
   send(pl.ws, { type: 'battle_state', battleId: bId, p1: cpuSide, p2: plSide, logs: b.logs.slice(-14), isTeamBattle: true, yourTurn: b.turnId !== CPU_ID });
 }
 
-// NUEVO: Función mágica que desbloquea el juego si alguien está aturdido o recargando
 function autoResolveTeamIfBlocked(bId) {
   const b = battles.get(bId); if (!b) return;
   const currentId = b.turnId;
-  // Si es turno de la IA, de pausa por muerte o pausa por torre, no hacer nada
   if (currentId === CPU_ID || currentId === -4 || currentId === -2) return; 
 
   const isP1 = b.p1id === currentId;
@@ -83,7 +81,6 @@ async function endTeamBattle(bId, winnerId, loserId, winnerRemainingHp) {
   if (winner) winner.inBattle = false;
   if (loser) loser.inBattle = false;
 
-  // NUEVO: Limpiar mapa de reconexión al terminar batalla 3v3
   if (b && b.p1Wallet) walletToBattle.delete(b.p1Wallet);
   if (b && b.p2Wallet) walletToBattle.delete(b.p2Wallet);
 
@@ -171,10 +168,11 @@ async function processTeamTurn(bId, attackerId, atkIndex) {
   b.logs.push(...tickEffects(aSt, aPlayer.name));
   if (await checkTeamDeath(bId, isP1, false)) return true;
 
-  if (aSt.stun) { aSt.stun = false; b.logs.push({t: `${aPlayer.name} aturdido — pierde turno`, c: 'special'}); } 
-  else if (aSt.recharge > 0) { aSt.recharge--; b.logs.push({t: `${aPlayer.name} recargando...`, c: 'special'}); } 
+  if (aSt.stun) { aSt.stun = false; b.logs.push({t: `${aPlayer.name} está aturdido y pierde su turno.`,c:'special'}); } 
+  else if (aSt.recharge > 0) { aSt.recharge--; b.logs.push({t: `${aPlayer.name} está recargando...`,c:'special'}); } 
   else if (atkIndex >= 0) {
     const atkKey = isP1 ? aPlayer.team[b.active1] : aPlayer.team[b.active2];
+    const dKey = isP1 ? dPlayer.team[b.active2] : dPlayer.team[b.active1];
     const atk = BEASTS[atkKey]?.attacks[atkIndex];
     if (!atk) return false;
     if (aSt.pp[atkIndex] <= 0) {
@@ -201,13 +199,14 @@ async function doTeamCpuTurn(bId) {
   b.logs.push(...tickEffects(cpuSt, CPU_NAME));
   if (await checkTeamDeath(bId, true, true)) return; 
 
-  if (cpuSt.stun) { cpuSt.stun = false; b.logs.push({t: `${CPU_NAME} aturdido — pierde turno`, c: 'special'}); } 
-  else if (cpuSt.recharge > 0) { cpuSt.recharge--; b.logs.push({t: `${CPU_NAME} recargando...`, c: 'special'}); } 
+  if (cpuSt.stun) { cpuSt.stun = false; b.logs.push({t: `${CPU_NAME} está aturdido y pierde su turno.`, c: 'special'}); } 
+  else if (cpuSt.recharge > 0) { cpuSt.recharge--; b.logs.push({t: `${CPU_NAME} está recargando...`, c: 'special'}); } 
   else {
     const idx = cpuPickAttack(cpuSt, plSt, b.cpuTeam[b.active1]);
     const atk = BEASTS[b.cpuTeam[b.active1]].attacks[idx];
     if (cpuSt.pp[idx] < 99) cpuSt.pp[idx]--;
-    b.logs.push(...applyAtk(cpuSt, plSt, atk, BEASTS[b.cpuTeam[b.active1]].name, BEASTS[atkKey].name));
+    // FIX: Se usaba atkKey que no existía aquí. Corregido para usar pl.team[b.active2]
+    b.logs.push(...applyAtk(cpuSt, plSt, atk, BEASTS[b.cpuTeam[b.active1]].name, BEASTS[pl.team[b.active2]].name));
     if (await checkTeamDeath(bId, true, true)) return;
   }
 
@@ -218,6 +217,7 @@ async function doTeamCpuTurn(bId) {
 
 async function processTeamCpuPlayerTurn(bId, playerId, atkIndex) {
   const b = battles.get(bId); if (!b || b.turnId !== playerId) return;
+  const plIsP1 = !b.cpuIsP1;
   const plSt = b.team2[b.active2];
   const cpuSt = b.team1[b.active1];
   const pl = lobby.get(playerId); if (!pl) return;
@@ -225,8 +225,8 @@ async function processTeamCpuPlayerTurn(bId, playerId, atkIndex) {
   b.logs.push(...tickEffects(plSt, pl.name));
   if (await checkTeamDeath(bId, false, true)) return;
 
-  if (plSt.stun) { plSt.stun = false; b.logs.push({t: `${pl.name} aturdido — pierde turno`, c: 'special'}); } 
-  else if (plSt.recharge > 0) { plSt.recharge--; b.logs.push({t: `${pl.name} recargando...`, c: 'special'}); } 
+  if (plSt.stun) { plSt.stun = false; b.logs.push({t: `${pl.name} está aturdido y pierde su turno.`, c: 'special'}); } 
+  else if (plSt.recharge > 0) { plSt.recharge--; b.logs.push({t: `${pl.name} está recargando...`, c: 'special'}); } 
   else if (atkIndex >= 0) {
     const atkKey = pl.team[b.active2];
     const atk = BEASTS[atkKey]?.attacks[atkIndex]; if (!atk) return;
