@@ -152,7 +152,7 @@ async function doGauntletCpuTurn(bId) {
   const plId  = b.cpuIsP1 ? b.p2id : b.p1id;
   const pl = lobby.get(plId); if (!pl) return;
 
-  b.logs.push(...tickEffects(cpuSt));
+  b.logs.push(...tickEffects(cpuSt, CPU_NAME));
   if (await checkGauntletCpuDeath(bId)) return;
 
   if (cpuSt.stun) { 
@@ -165,7 +165,7 @@ async function doGauntletCpuTurn(bId) {
     const idx = cpuPickAttack(cpuSt, plSt, b.cpuBeast);
     const atk = BEASTS[b.cpuBeast].attacks[idx];
     if (cpuSt.pp[idx] < 99) cpuSt.pp[idx]--;
-    b.logs.push(...applyAtk(cpuSt, plSt, atk, CPU_NAME));
+    b.logs.push(...applyAtk(cpuSt, plSt, atk, CPU_NAME, pl.name));
     if (await checkGauntletCpuDeath(bId)) return;
   }
 
@@ -189,7 +189,7 @@ async function processGauntletPlayerTurn(bId, playerId, atkIndex) {
   const cpuSt = plIsP1 ? b.st2 : b.st1;
   const pl = lobby.get(playerId); if (!pl) return;
 
-  b.logs.push(...tickEffects(plSt));
+  b.logs.push(...tickEffects(plSt, pl.name));
   if (await checkGauntletCpuDeath(bId)) return;
 
   if (plSt.stun) { 
@@ -206,7 +206,7 @@ async function processGauntletPlayerTurn(bId, playerId, atkIndex) {
       b.turnId = CPU_ID; pushCpuBattle(bId); scheduleGauntletCpuTurn(bId); return;
     }
     if (plSt.pp[atkIndex] < 99) plSt.pp[atkIndex]--;
-    b.logs.push(...applyAtk(plSt, cpuSt, atk, pl.name));
+    b.logs.push(...applyAtk(plSt, cpuSt, atk, pl.name, CPU_NAME));
     if (await checkGauntletCpuDeath(bId)) return;
   }
   

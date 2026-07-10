@@ -168,7 +168,7 @@ async function processTeamTurn(bId, attackerId, atkIndex) {
   const dPlayer = lobby.get(isP1 ? b.p2id : b.p1id);
   if (!aPlayer || !dPlayer) return true;
 
-  b.logs.push(...tickEffects(aSt));
+  b.logs.push(...tickEffects(aSt, aPlayer.name));
   if (await checkTeamDeath(bId, isP1, false)) return true;
 
   if (aSt.stun) { aSt.stun = false; b.logs.push({t: `${aPlayer.name} aturdido — pierde turno`, c: 'special'}); } 
@@ -182,7 +182,7 @@ async function processTeamTurn(bId, attackerId, atkIndex) {
       b.turnId = isP1 ? b.p2id : b.p1id; pushTeamBattle(bId); autoResolveTeamIfBlocked(bId); return false;
     }
     if (aSt.pp[atkIndex] < 99) aSt.pp[atkIndex]--;
-    b.logs.push(...applyAtk(aSt, dSt, atk, BEASTS[atkKey].name));
+    b.logs.push(...applyAtk(aSt, dSt, atk, BEASTS[atkKey].name, BEASTS[dKey].name));
     if (await checkTeamDeath(bId, isP1, false)) return true;
   }
   b.turnId = isP1 ? b.p2id : b.p1id;
@@ -198,7 +198,7 @@ async function doTeamCpuTurn(bId) {
   const plId  = b.p2id;
   const pl = lobby.get(plId); if (!pl) return;
 
-  b.logs.push(...tickEffects(cpuSt));
+  b.logs.push(...tickEffects(cpuSt, CPU_NAME));
   if (await checkTeamDeath(bId, true, true)) return; 
 
   if (cpuSt.stun) { cpuSt.stun = false; b.logs.push({t: `${CPU_NAME} aturdido — pierde turno`, c: 'special'}); } 
@@ -207,7 +207,7 @@ async function doTeamCpuTurn(bId) {
     const idx = cpuPickAttack(cpuSt, plSt, b.cpuTeam[b.active1]);
     const atk = BEASTS[b.cpuTeam[b.active1]].attacks[idx];
     if (cpuSt.pp[idx] < 99) cpuSt.pp[idx]--;
-    b.logs.push(...applyAtk(cpuSt, plSt, atk, BEASTS[b.cpuTeam[b.active1]].name));
+    b.logs.push(...applyAtk(cpuSt, plSt, atk, BEASTS[b.cpuTeam[b.active1]].name, BEASTS[atkKey].name));
     if (await checkTeamDeath(bId, true, true)) return;
   }
 
@@ -222,7 +222,7 @@ async function processTeamCpuPlayerTurn(bId, playerId, atkIndex) {
   const cpuSt = b.team1[b.active1];
   const pl = lobby.get(playerId); if (!pl) return;
 
-  b.logs.push(...tickEffects(plSt));
+  b.logs.push(...tickEffects(plSt, pl.name));
   if (await checkTeamDeath(bId, false, true)) return;
 
   if (plSt.stun) { plSt.stun = false; b.logs.push({t: `${pl.name} aturdido — pierde turno`, c: 'special'}); } 
@@ -237,7 +237,7 @@ async function processTeamCpuPlayerTurn(bId, playerId, atkIndex) {
       return;
     }
     if (plSt.pp[atkIndex] < 99) plSt.pp[atkIndex]--;
-    b.logs.push(...applyAtk(plSt, cpuSt, atk, BEASTS[atkKey].name));
+    b.logs.push(...applyAtk(plSt, cpuSt, atk, BEASTS[atkKey].name, BEASTS[b.cpuTeam[b.active1]].name));
     if (await checkTeamDeath(bId, false, true)) return;
   }
   b.turnId = CPU_ID; 

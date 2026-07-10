@@ -24,23 +24,23 @@ function getStartState(beastKey) {
   return st; 
 }
 
-function applyAtk(aSt, dSt, atk, aName) { 
+function applyAtk(aSt, dSt, atk, aName, dName) { 
   const logs = []; 
   const blind = aSt.blind > 0 ? 30 : 0; 
   const weakMul = aSt.weakAtk > 0 ? 0.8 : 1; 
   const anaMul = aSt.analyzed > 0 ? 1.15 : 1; 
   const fx = atk.fx;
   
-  if (fx==='shield2') { aSt.shield=2; aSt.shieldReflect=0; logs.push({t:`${aName} activa Escudo ×2`,c:'good'}); return logs; }
-  if (fx==='shield1r') { aSt.shield=1; aSt.shieldReflect=15; logs.push({t:`${aName} activa Escudo Lunar`,c:'good'}); return logs; }
-  if (fx==='reflect50'){ aSt.reflect50=1; logs.push({t:`${aName} prepara Reflejo 50%`,c:'good'}); return logs; }
-  if (fx==='heal20') { aSt.hp=Math.min(aSt.maxHp,aSt.hp+20); logs.push({t:`${aName} se cura 20 HP`,c:'good'}); return logs; }
-  if (fx==='heal30') { aSt.hp=Math.min(aSt.maxHp,aSt.hp+30); logs.push({t:`${aName} se cura 30 HP`,c:'good'}); return logs; }
-  if (fx==='fortress') { aSt.shield=2; aSt.hp=Math.min(aSt.maxHp,aSt.hp+15); aSt.regen=6; aSt.regenTurns=2; logs.push({t:`${aName} activa Fortaleza`,c:'good'}); return logs; }
-  if (fx==='analyze') { aSt.analyzed=3; logs.push({t:`${aName} analiza al rival`,c:'good'}); return logs; }
-  if (fx==='purify') { aSt.poisonTurns=aSt.burnTurns=aSt.blind=aSt.weakAtk=aSt.weaken=0; aSt.stun=false; aSt.hp=Math.min(aSt.maxHp,aSt.hp+15); logs.push({t:`${aName} se purifica +15 HP`,c:'good'}); return logs; }
-  if (fx==='weaken') { dSt.weaken=2; logs.push({t:`${aName} debilita al rival`,c:'special'}); return logs; }
-  if (fx==='counter') { const h=aSt.lastDmgReceived||0; aSt.hp=Math.min(aSt.maxHp,aSt.hp+h); logs.push({t:`${aName} usa Contrapeso: +${h} HP`,c:'good'}); return logs; }
+  if (fx==='shield2') { aSt.shield=2; aSt.shieldReflect=0; logs.push({t:`${aName} usó ${atk.n}. ¡Se protege con un Escudo ×2!`,c:'good'}); return logs; }
+  if (fx==='shield1r') { aSt.shield=1; aSt.shieldReflect=15; logs.push({t:`${aName} usó ${atk.n}. ¡Escudo Lunar activado!`,c:'good'}); return logs; }
+  if (fx==='reflect50'){ aSt.reflect50=1; logs.push({t:`${aName} usó ${atk.n}. ¡Prepara un Reflejo del 50%!`,c:'good'}); return logs; }
+  if (fx==='heal20') { aSt.hp=Math.min(aSt.maxHp,aSt.hp+20); logs.push({t:`${aName} usó ${atk.n}. ¡Se cura 20 HP!`,c:'good'}); return logs; }
+  if (fx==='heal30') { aSt.hp=Math.min(aSt.maxHp,aSt.hp+30); logs.push({t:`${aName} usó ${atk.n}. ¡Se cura 30 HP!`,c:'good'}); return logs; }
+  if (fx==='fortress') { aSt.shield=2; aSt.hp=Math.min(aSt.maxHp,aSt.hp+15); aSt.regen=6; aSt.regenTurns=2; logs.push({t:`${aName} usó ${atk.n}. ¡Fortaleza activada: Escudo, Cura y Regeneración!`,c:'good'}); return logs; }
+  if (fx==='analyze') { aSt.analyzed=3; logs.push({t:`${aName} usó ${atk.n}. ¡Analiza a ${dName}! (+15% daño)`,c:'good'}); return logs; }
+  if (fx==='purify') { aSt.poisonTurns=aSt.burnTurns=aSt.blind=aSt.weakAtk=aSt.weaken=0; aSt.stun=false; aSt.hp=Math.min(aSt.maxHp,aSt.hp+15); logs.push({t:`${aName} usó ${atk.n}. ¡Se purifica y cura 15 HP!`,c:'good'}); return logs; }
+  if (fx==='weaken') { dSt.weaken=2; logs.push({t:`${aName} usó ${atk.n}. ¡Debilita a ${dName}! (-25% daño)`,c:'special'}); return logs; }
+  if (fx==='counter') { const h=aSt.lastDmgReceived||0; aSt.hp=Math.min(aSt.maxHp,aSt.hp+h); logs.push({t:`${aName} usó ${atk.n}. ¡Contrapeso! Recupera ${h} HP.`,c:'good'}); return logs; }
   
   if (fx==='swap') { 
     const propsToSwap = ['stun', 'poisonDmg', 'poisonTurns', 'burnDmg', 'burnTurns', 'blind', 'weakAtk', 'weaken', 'corrode'];
@@ -49,19 +49,36 @@ function applyAtk(aSt, dSt, atk, aName) {
       dSt[prop] = aSt[prop];
       aSt[prop] = temp;
     });
-    logs.push({t:`${aName} intercambia estados negativos con el rival`,c:'special'}); 
+    logs.push({t:`${aName} usó ${atk.n}. ¡Intercambia estados con ${dName}!`,c:'special'}); 
     return logs; 
   }
 
-  if (fx==='equalize') { const diff=Math.abs(aSt.hp-dSt.hp); dSt.hp=Math.max(0,dSt.hp-diff); logs.push({t:`${aName} → Equilibrio: ${diff} HP`,c:'bad'}); return logs; }
-  if (fx==='chaos'||fx==='chaosHi') { if (Math.random()*100 >= atk.acc-blind) { logs.push({t:`${aName} → ¡falló!`,c:'bad'}); return logs; } const dmg=fx==='chaosHi'?Math.floor(Math.random()*36)+10:Math.floor(Math.random()*36)+5; dSt.hp=Math.max(0,dSt.hp-dmg); logs.push({t:`${aName} → Caos: ${dmg} HP`,c:'bad'}); return logs; }
+  if (fx==='equalize') { const diff=Math.abs(aSt.hp-dSt.hp); dSt.hp=Math.max(0,dSt.hp-diff); logs.push({t:`${aName} usó ${atk.n}. ¡Equilibra la vida! Quita ${diff} HP a ${dName}.`,c:'bad'}); return logs; }
+  if (fx==='chaos'||fx==='chaosHi') { 
+    if (Math.random()*100 >= atk.acc-blind) { logs.push({t:`${aName} usó ${atk.n}, pero ¡falló!`,c:'bad'}); return logs; } 
+    const dmg=fx==='chaosHi'?Math.floor(Math.random()*36)+10:Math.floor(Math.random()*36)+5; dSt.hp=Math.max(0,dSt.hp-dmg); 
+    logs.push({t:`${aName} usó ${atk.n}. ¡Caos! Causa ${dmg} HP de daño a ${dName}.`,c:'bad'}); return logs; 
+  }
   
   const hit = Math.random()*100 < Math.max(5, atk.acc-blind);
-  if (!hit) { if (fx==='overload') { aSt.hp=Math.max(0,aSt.hp-25); logs.push({t:`${aName} → Sobrecarga falló! -25 HP`,c:'bad'}); } else logs.push({t:`${aName} → ¡falló!`,c:'bad'}); return logs; }
+  if (!hit) { 
+    if (fx==='overload') { aSt.hp=Math.max(0,aSt.hp-25); logs.push({t:`${aName} usó ${atk.n}, pero falló. ¡Sobrecarga fallida! -25 HP.`,c:'bad'}); } 
+    else logs.push({t:`${aName} usó ${atk.n}, pero ¡falló!`,c:'bad'}); 
+    return logs; 
+  }
   
   if (atk.d > 0 && !atk.pierce) {
-    if (dSt.shield > 0) { dSt.shield--; const ref=dSt.shieldReflect||0; if (ref>0) { aSt.hp=Math.max(0,aSt.hp-ref); logs.push({t:`¡Escudo! Bloqueado — refleja ${ref} HP`,c:'special'}); } else logs.push({t:`¡Escudo! Ataque bloqueado`,c:'special'}); return logs; }
-    if (dSt.reflect50 > 0) { dSt.reflect50=0; const ref=Math.floor(atk.d*0.5); aSt.hp=Math.max(0,aSt.hp-ref); logs.push({t:`¡Reflejo! Devuelve ${ref} HP`,c:'special'}); return logs; }
+    if (dSt.shield > 0) { 
+      dSt.shield--; const ref=dSt.shieldReflect||0; 
+      if (ref>0) { aSt.hp=Math.max(0,aSt.hp-ref); logs.push({t:`${aName} usó ${atk.n}, pero el escudo de ${dName} bloqueó el ataque y reflejó ${ref} HP.`,c:'special'}); } 
+      else logs.push({t:`${aName} usó ${atk.n}, pero el escudo de ${dName} bloqueó el ataque.`,c:'special'}); 
+      return logs; 
+    }
+    if (dSt.reflect50 > 0) { 
+      dSt.reflect50=0; const ref=Math.floor(atk.d*0.5); aSt.hp=Math.max(0,aSt.hp-ref); 
+      logs.push({t:`${aName} usó ${atk.n}, pero ${dName} reflejó el 50% del daño. (-${ref} HP)`,c:'special'}); 
+      return logs; 
+    }
   }
   
   let dmg=atk.d;
@@ -80,31 +97,35 @@ function applyAtk(aSt, dSt, atk, aName) {
   
   dSt.hp=Math.max(0,dSt.hp-dmg); dSt.lastDmgReceived=dmg; if (atk.self>0) aSt.hp=Math.max(0,aSt.hp-atk.self);
   
-  let extra='';
-  if (fx==='poison5') { dSt.poisonDmg=8; dSt.poisonTurns=5; }
-  if (fx==='poison3l') { dSt.poisonDmg=3; dSt.poisonTurns=3; }
-  if (fx==='corrode') { dSt.corrode=3; }
-  if (fx==='burn') { dSt.burnDmg=6; dSt.burnTurns=2; }
-  if (fx==='stun') { dSt.stun=true; }
-  if (fx==='stun_blind') { dSt.stun=true; dSt.blind=2; }
-  if (fx==='stun_ifless'&&dSt.hp>aSt.hp) { dSt.stun=true; }
-  if (fx==='slow'||fx==='slow2') { dSt.blind=(fx==='slow2'?2:1); }
-  if (fx==='blind') { dSt.blind=2; }
-  if (fx==='weakAtk') { dSt.weakAtk=2; }
-  if (fx==='recharge') { aSt.recharge=1; }
-  if (fx==='random_fx') { const opts=['poison','stun','blind','weakAtk']; const r=opts[Math.floor(Math.random()*opts.length)]; if(r==='poison'){dSt.poisonDmg=5;dSt.poisonTurns=3;} if(r==='stun'){dSt.stun=true;} if(r==='blind'){dSt.blind=2;} if(r==='weakAtk'){dSt.weakAtk=2;} }
+  let mainLog = `${aName} usó ${atk.n} y causó ${dmg} HP de daño a ${dName}.`;
+  if (atk.d === 0 && fx !== 'drain10') mainLog = `${aName} usó ${atk.n} en ${dName}.`;
   
-  const selfNote=atk.self>0?` (-${atk.self} propio)`:''; 
+  let effectLog = '';
+  if (fx==='poison5') { dSt.poisonDmg=8; dSt.poisonTurns=5; effectLog = ` ¡Envenenó a ${dName} por 5 turnos!`; }
+  if (fx==='poison3l') { dSt.poisonDmg=3; dSt.poisonTurns=3; effectLog = ` ¡Envenenó levemente a ${dName}!`; }
+  if (fx==='corrode') { dSt.corrode=3; effectLog = ` ¡El veneno de ${dName} ahora es corrosivo!`; }
+  if (fx==='burn') { dSt.burnDmg=6; dSt.burnTurns=2; effectLog = ` ¡Quemó a ${dName}!`; }
+  if (fx==='stun') { dSt.stun=true; effectLog = ` ¡Aturdió a ${dName}!`; }
+  if (fx==='stun_blind') { dSt.stun=true; dSt.blind=2; effectLog = ` ¡Aturdió y cegó a ${dName}!`; }
+  if (fx==='stun_ifless'&&dSt.hp>aSt.hp) { dSt.stun=true; effectLog = ` ¡Aturdió a ${dName}!`; }
+  if (fx==='slow'||fx==='slow2') { dSt.blind=(fx==='slow2'?2:1); effectLog = ` ¡Cegó a ${dName}!`; }
+  if (fx==='blind') { dSt.blind=2; effectLog = ` ¡Cegó a ${dName}!`; }
+  if (fx==='weakAtk') { dSt.weakAtk=2; effectLog = ` ¡Redució el ataque de ${dName}!`; }
+  if (fx==='recharge') { aSt.recharge=1; effectLog = ` (${aName} debe recargar el próximo turno.)`; }
+  if (fx==='random_fx') { const opts=['poison','stun','blind','weakAtk']; const r=opts[Math.floor(Math.random()*opts.length)]; if(r==='poison'){dSt.poisonDmg=5;dSt.poisonTurns=3;effectLog=' ¡Aplicó Veneno!';} if(r==='stun'){dSt.stun=true;effectLog=' ¡Aplicó Stun!';} if(r==='blind'){dSt.blind=2;effectLog=' ¡Aplicó Ceguera!';} if(r==='weakAtk'){dSt.weakAtk=2;effectLog=' ¡Aplicó Debilidad!';} }
+  
+  const selfNote=atk.self>0?` (-${atk.self} HP propio)`:''; 
   const healNote=fx==='drain10'?' (drena 10)':fx==='selfheal10'?' (+10 propio)':'';
-  logs.push({t:`${aName} → ${dmg} HP${selfNote}${healNote}${extra}`,c:dmg>25?'bad':'normal'});
+  
+  logs.push({t:`${mainLog}${effectLog}${selfNote}${healNote}`,c:dmg>25?'bad':'normal'});
   return logs;
 }
 
-function tickEffects(st) {
+function tickEffects(st, name) {
   const logs=[];
-  if (st.poisonTurns>0){ st.hp=Math.max(0,st.hp-st.poisonDmg); st.poisonTurns--; logs.push({t:`Veneno`,c:'special'}); }
-  if (st.burnTurns>0) { st.hp=Math.max(0,st.hp-st.burnDmg); st.burnTurns--; logs.push({t:`Quema`,c:'special'}); }
-  if (st.regenTurns>0){ st.hp=Math.min(st.maxHp,st.hp+st.regen); st.regenTurns--; logs.push({t:`Regen`,c:'good'}); }
+  if (st.poisonTurns>0){ st.hp=Math.max(0,st.hp-st.poisonDmg); st.poisonTurns--; logs.push({t:`${name} sufre ${st.poisonDmg} HP de daño por veneno.`,c:'special'}); }
+  if (st.burnTurns>0) { st.hp=Math.max(0,st.hp-st.burnDmg); st.burnTurns--; logs.push({t:`${name} sufre ${st.burnDmg} HP de daño por quemadura.`,c:'special'}); }
+  if (st.regenTurns>0){ st.hp=Math.min(st.maxHp,st.hp+st.regen); st.regenTurns--; logs.push({t:`${name} regenera ${st.regen} HP.`,c:'good'}); }
   if (st.blind>0) st.blind--; if (st.weakAtk>0) st.weakAtk--; if (st.weaken>0) st.weaken--; if (st.corrode>0) st.corrode--; if (st.analyzed>0) st.analyzed--;
   return logs;
 }
@@ -113,12 +134,11 @@ async function endBattle(bId, winnerId, loserId, winnerHp, forfeit=false) {
   const b = battles.get(bId);
   const isCpu = b?.isCpu || false;
   const isTraining = b?.isTraining || false;
-  const isLabSimulation = b?.isLabSimulation || false; // NUEVO
+  const isLabSimulation = b?.isLabSimulation || false; 
   const winner = lobby.get(winnerId);
   const loser = lobby.get(loserId);
   const hp = forfeit ? 100 : Math.max(0, Math.min(100, winnerHp));
 
-  // NUEVO: Si es simulación del laboratorio, no tocar DB ni HP, solo avisar al frontend
   if (isLabSimulation) {
     if(winner) winner.ws.send(JSON.stringify({ type:'battle_end', won:true, isCpu:true, isTraining:true, isLabSimulation:true, winnerXp:0, loserXp:0 }));
     if(loser) loser.ws.send(JSON.stringify({ type:'battle_end', won:false, isCpu:true, isTraining:true, isLabSimulation:true, winnerXp:0, loserXp:0 }));
@@ -157,7 +177,6 @@ async function endBattle(bId, winnerId, loserId, winnerHp, forfeit=false) {
   if (winner) winner.inBattle=false;
   if (loser) loser.inBattle=false;
 
-  // Limpiar mapa de reconexión al terminar batalla
   if (b && b.p1Wallet) walletToBattle.delete(b.p1Wallet);
   if (b && b.p2Wallet) walletToBattle.delete(b.p2Wallet);
 
@@ -186,13 +205,13 @@ async function processTurn(bId, attackerId, atkIndex) {
   const dPlayer= lobby.get(isP1 ? b.p2id : b.p1id);
   if (!aPlayer||!dPlayer) return true;
 
-  b.logs.push(...tickEffects(aSt));
+  b.logs.push(...tickEffects(aSt, aPlayer.name));
   if (await checkDeath(bId, isP1)) return true;
 
   if (aSt.stun) {
-    aSt.stun=false; b.logs.push({t:`${aPlayer.name} aturdido — pierde turno`,c:'special'});
+    aSt.stun=false; b.logs.push({t:`${aPlayer.name} está aturdido y pierde su turno.`,c:'special'});
   } else if (aSt.recharge>0) {
-    aSt.recharge--; b.logs.push({t:`${aPlayer.name} recargando...`,c:'special'});
+    aSt.recharge--; b.logs.push({t:`${aPlayer.name} está recargando...`,c:'special'});
   } else if (atkIndex >= 0) {
     const atks=BEASTS[aPlayer.beast]?.attacks;
     const atk=atks?.[atkIndex];
@@ -202,7 +221,7 @@ async function processTurn(bId, attackerId, atkIndex) {
       b.turnId = isP1 ? b.p2id : b.p1id; pushBattle(bId); autoResolveIfBlocked(bId); return false;
     }
     if (aSt.pp[atkIndex] < 99) aSt.pp[atkIndex]--;
-    b.logs.push(...applyAtk(aSt,dSt,atk,aPlayer.name));
+    b.logs.push(...applyAtk(aSt,dSt,atk,aPlayer.name, dPlayer.name));
     if (await checkDeath(bId, isP1)) return true;
   }
   b.turnId = isP1 ? b.p2id : b.p1id;

@@ -22,8 +22,42 @@ function showBestiaryDetail(k){ const b=BEASTS[k]; const panel=document.getEleme
 function toggleEditName() { const box = document.getElementById('edit-name-box'); const input = document.getElementById('inp-edit-name'); if (box.style.display === 'none' || box.style.display === '') { input.value = myName; box.style.display = 'block'; } else { box.style.display = 'none'; } }
 function saveNickname() { const newName = document.getElementById('inp-edit-name').value.trim(); if (!newName) return alert('Ingresa un nombre válido'); myName = newName; localStorage.setItem('vicamon_nick', myName); document.getElementById('profile-name').textContent = myName; document.getElementById('edit-name-box').style.display = 'none'; if (ws && ws.readyState === 1) ws.send(JSON.stringify({type:'update_nickname', name: myName})); updateLobbyBadge(); }
 
-function openChallengeMenu(targetId, name, isTrain) { pendingChallengeTargetId = targetId; pendingIsTraining = isTrain; isGauntletChallenge = false; const title = isTrain ? `Entrenar con ${name}` : `Batalla por HP con ${name}`; let buttonsHtml = ''; if (isGuest && !isTrain) { alert('Los invitados solo pueden entrenar. Conecta tu wallet para batallas por HP.'); return; } if (isTrain) { buttonsHtml += `<button class="btn btn-blue" style="width:100%;margin-bottom:10px" onclick="selectChallengeMode('train')">🤝 Entrenar 1 vs 1 (XP)</button>`; buttonsHtml += `<button class="btn btn-blue" style="width:100%" onclick="selectChallengeMode('train3v3')">🤝 Entrenar 3 vs 3 (XP)</button>`; } else { buttonsHtml += `<button class="btn btn-blue" style="width:100%;margin-bottom:10px" ${myCurrentHP < 100 ? 'disabled' : ''} onclick="selectChallengeMode('1v1')">⚔️ 1 vs 1 (Recompensa 100 HP)</button>`; buttonsHtml += `<button class="btn btn-blue" style="width:100%" ${myCurrentHP < 300 ? 'disabled' : ''} onclick="selectChallengeMode('3v3')">⚔️ 3 vs 3 (Recompensa 300 HP)</button>`; } const modal = document.getElementById('modal-challenge-mode'); modal.innerHTML = `<div class="modal" style="max-width:350px"><h3 style="margin-bottom:20px">${title}</h3><div style="display:flex;flex-direction:column;gap:5px">${buttonsHtml}</div><button class="btn btn-sm btn-red" style="margin-top:20px;width:100%" onclick="document.getElementById('modal-challenge-mode').classList.add('hidden')">Cancelar</button></div>`; modal.classList.remove('hidden'); }
-function selectChallengeMode(mode) { document.getElementById('modal-challenge-mode').classList.add('hidden'); teamSelectionMode = (mode === '3v3' || mode === 'train3v3') ? '3v3' : '1v1'; pendingIsTraining = (mode === 'train' || mode === 'train3v3'); selectedTeam = []; const titleEl = document.getElementById('ts-mode-title'); const isMaster = (pendingChallengeTargetId === null); if(teamSelectionMode === '1v1') titleEl.textContent = (isMaster || pendingIsTraining) ? 'Entrenamiento: 1 vs 1 (Elige 1)' : 'Batalla por HP: 1 vs 1 (Elige 1)'; if(teamSelectionMode === '3v3') titleEl.textContent = (isMaster || pendingIsTraining) ? 'Entrenamiento: 3 vs 3 (Elige 3)' : 'Batalla por HP: 3 vs 3 (Elige 3)'; buildTeamPickGrid(); show('s-team-select'); }
+function openChallengeMenu(targetId, name, isTrain) { 
+  pendingChallengeTargetId = targetId; 
+  pendingIsTraining = isTrain; 
+  isGauntletChallenge = false; 
+  const title = isTrain ? `Entrenar con ${name}` : `Batalla por HP con ${name}`; 
+  let buttonsHtml = ''; 
+  if (isGuest && !isTrain) { alert('Los invitados solo pueden entrenar. Conecta tu wallet para batallas por HP.'); return; } 
+  if (isTrain) { 
+    buttonsHtml += `<button class="btn btn-blue" style="width:100%;margin-bottom:10px" onclick="selectChallengeMode('train')">🤝 Entrenar 1 vs 1 (XP)</button>`; 
+    buttonsHtml += `<button class="btn btn-blue" style="width:100%" onclick="selectChallengeMode('train3v3')">🤝 Entrenar 3 vs 3 (XP)</button>`; 
+  } else { 
+    buttonsHtml += `<button class="btn btn-blue" style="width:100%;margin-bottom:10px" ${myCurrentHP < 100 ? 'disabled' : ''} onclick="selectChallengeMode('1v1')">⚔️ 1 vs 1 (Recompensa 100 HP)</button>`; 
+    buttonsHtml += `<button class="btn btn-blue" style="width:100%" ${myCurrentHP < 300 ? 'disabled' : ''} onclick="selectChallengeMode('3v3')">⚔️ 3 vs 3 (Recompensa 300 HP)</button>`; 
+  } 
+  const modal = document.getElementById('modal-challenge-mode'); 
+  modal.innerHTML = `<div class="modal" style="max-width:350px"><h3 style="margin-bottom:20px">${title}</h3><div style="display:flex;flex-direction:column;gap:5px">${buttonsHtml}</div><button class="btn btn-sm btn-red" style="margin-top:20px;width:100%" onclick="document.getElementById('modal-challenge-mode').classList.add('hidden')">Cancelar</button></div>`; 
+  modal.classList.remove('hidden'); 
+}
+
+function openMasterMenu() {
+  document.getElementById('modal-master-menu').classList.remove('hidden');
+}
+
+function selectChallengeMode(mode) { 
+  document.getElementById('modal-challenge-mode').classList.add('hidden'); 
+  document.getElementById('modal-master-menu').classList.add('hidden'); // Cerrar menú master si venía de ahí
+  teamSelectionMode = (mode === '3v3' || mode === 'train3v3') ? '3v3' : '1v1'; 
+  pendingIsTraining = (mode === 'train' || mode === 'train3v3'); 
+  selectedTeam = []; 
+  const titleEl = document.getElementById('ts-mode-title'); 
+  const isMaster = (pendingChallengeTargetId === null); 
+  if(teamSelectionMode === '1v1') titleEl.textContent = (isMaster || pendingIsTraining) ? 'Entrenamiento: 1 vs 1 (Elige 1)' : 'Batalla por HP: 1 vs 1 (Elige 1)'; 
+  if(teamSelectionMode === '3v3') titleEl.textContent = (isMaster || pendingIsTraining) ? 'Entrenamiento: 3 vs 3 (Elige 3)' : 'Batalla por HP: 3 vs 3 (Elige 3)'; 
+  buildTeamPickGrid(); 
+  show('s-team-select'); 
+}
 
 function buildTeamPickGrid() { const allKeys=Object.entries(BEASTS); const keys=allKeys.filter(([k,b])=>b.cat!=='Físico'||myPhysicalBeasts.includes(k)); let html=''; keys.forEach(([k,b])=>{ html+=`<div class="bcard" id="tpc-${k}" onclick="toggleTeamBeast('${k}')"><img src="${b.img}" alt="${b.name}"><div class="bname">${b.name}</div><div class="bsub">${b.sub}</div><span class="bstyle" style="${STCSS[b.style]}">${b.style}</span><div class="elbar" style="background:${EL[b.el]}"></div></div>`; }); html+=`<div class="beast-detail" id="team-detail-panel"></div>`; document.getElementById('team-pick-grid').innerHTML=html; updateTeamSelectionUI(); }
 function toggleTeamBeast(k) { const maxPicks = teamSelectionMode === '3v3' ? 3 : 1; const idx = selectedTeam.indexOf(k); if(idx > -1) { selectedTeam.splice(idx, 1); } else { if(selectedTeam.length >= maxPicks) { alert(`Ya elegiste ${maxPicks} Vicamons.`); return; } selectedTeam.push(k); } updateTeamSelectionUI(); }
@@ -76,6 +110,7 @@ function openTowerMenu() {
 
 function challengeGauntlet(towerMode) { 
   document.getElementById('modal-tower-menu').classList.add('hidden');
+  document.getElementById('modal-master-menu').classList.add('hidden'); // Cerrar menú master si venía de ahí
   if(!ws || ws.readyState !== 1) return alert('Conectando...'); 
   if(towerMode === 'hp' && myCurrentHP < 100) return alert('Necesitas al menos 100 HP.');
   
@@ -105,7 +140,20 @@ function executeSwitch(index) { const modalBg = document.getElementById('modal-s
 function animHit(side, dmg){ const spr=document.getElementById('spr-'+side); if(!spr) return; spr.classList.remove('anim-hit','anim-attack'); void spr.offsetWidth; spr.classList.add('anim-hit'); const wrap=spr.closest('.f-sprite-wrap'); const fl=document.createElement('div'); fl.className='dmg-float'; fl.textContent='-'+dmg; fl.style.color='#F0997B'; wrap.appendChild(fl); playSfx('ataque'); setTimeout(()=>{spr.classList.remove('anim-hit');fl.remove();},800); }
 function animAttack(side){ const spr=document.getElementById('spr-'+side); if(!spr) return; spr.classList.remove('anim-attack'); void spr.offsetWidth; spr.classList.add('anim-attack'); setTimeout(()=>spr.classList.remove('anim-attack'),400); }
 
-function updateLobbyBadge(){ document.getElementById('lbl-myname').textContent=myName; const hpEl = document.getElementById('lbl-myhp'); if(hpEl) hpEl.textContent = isGuest ? 'Invitado' : (myCurrentHP + ' HP'); const b = BEASTS[myBeast] || BEASTS['aries']; const badgeImg = document.getElementById('badge-img'); if(badgeImg) { badgeImg.src=b.img; badgeImg.style.display='block'; } }
+function updateLobbyBadge(){ 
+  document.getElementById('lbl-myname').textContent=myName; 
+  const hpEl = document.getElementById('lbl-myhp'); 
+  if(hpEl) hpEl.textContent = isGuest ? 'Invitado' : (myCurrentHP + ' HP'); 
+  const b = BEASTS[myBeast] || BEASTS['aries']; 
+  const badgeImg = document.getElementById('badge-img'); 
+  if(badgeImg) { badgeImg.src=b.img; badgeImg.style.display='block'; } 
+  
+  // NUEVO: Mostrar/Ocultar Cashout rápido en el lobby
+  const cashoutBtnLobby = document.getElementById('btn-cashout-lobby');
+  if(cashoutBtnLobby) {
+    cashoutBtnLobby.style.display = (myCurrentHP > 0 && !isGuest) ? 'inline-block' : 'none';
+  }
+}
 
 var _lastLobbyPlayers=[]; function renderLobbyFromCache(){ renderLobby(_lastLobbyPlayers); }
 function renderLobby(others){ _lastLobbyPlayers=others; const list=document.getElementById('players-list'); const myHp=myCurrentHP; const hpWarnEl=document.getElementById('low-hp-warning'); if(hpWarnEl) { hpWarnEl.style.display = 'block'; const warnMsg = hpWarnEl.querySelector('div:first-child'); if (warnMsg) warnMsg.style.display = (!isGuest && myHp < 100) ? 'block' : 'none'; } document.getElementById('guest-lobby-banner').style.display = isGuest ? 'flex' : 'none'; if(!others.length){list.innerHTML='<p class="empty-lobby">No hay otros jugadores...</p>';return;} list.innerHTML=others.map(p=>{ const b=BEASTS[p.beast]||{name:p.beast,img:''}; const rivalHp=p.hp||0; const isTargetGuest = p.isGuest || false; const canChallengeHP = !isGuest && !isTargetGuest && myHp >= 100 && rivalHp >= 100; const hpColor=rivalHp>=100?'#5DCAA5':'#F0997B'; const hpText = isTargetGuest ? 'Invitado' : `${rivalHp} HP`; return `<div class="p-row"><div class="p-info"><img class="p-img" src="${b.img}"><div><div class="p-name">${p.name}</div><div class="p-beast">${b.name} · <span style="color:${hpColor};font-size:10px">${hpText}</span></div></div></div><div style="display:flex;gap:6px"><button class="btn btn-sm" style="background:rgba(130,80,180,.15);border:1px solid rgba(130,80,180,.35);color:#CFA9EC" onclick="openChallengeMenu(${p.id},'${p.name}', true)">🤝 Entrenar</button><button class="btn btn-blue btn-sm" ${canChallengeHP?'':'disabled'} onclick="openChallengeMenu(${p.id},'${p.name}', false)">⚔️ Batalla HP</button></div></div>`; }).join(''); }
