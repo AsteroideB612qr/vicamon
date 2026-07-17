@@ -27,18 +27,22 @@ async function connectPhantom() {
   await new Promise(r => setTimeout(r, 100));
   const phantom = getPhantom();
   if (!phantom || !phantom.isPhantom) {
+    // Detectar si es móvil
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent); 
     if (isMobile) { 
+      // Si es móvil, mostrar el modal con instrucciones
       document.getElementById('mobile-url-display').textContent = window.location.href;
       document.getElementById('modal-mobile-connect').classList.remove('hidden');
       return; 
     }
+    // Si es PC y no tiene Phantom, mostrar error
     document.getElementById('no-phantom').style.display='block'; 
     document.getElementById('no-phantom').innerHTML = 'Phantom no detectado. <a href="https://phantom.app" target="_blank" style="color:#F0997B;text-decoration:underline">Instalalo aqui</a>.'; 
     document.getElementById('btn-phantom').style.display='none'; 
     document.getElementById('btn-guest').style.display='none'; 
     return;
   }
+  // Si Phantom está instalado (PC o móvil), conectar normalmente
   try {
     const resp = await phantom.connect(); const wasGuest = isGuest; myWallet = resp.publicKey.toString(); isGuest = false; 
     document.getElementById('btn-phantom').style.display='none'; document.getElementById('btn-guest').style.display='none'; document.getElementById('wallet-connected').style.display='block'; document.getElementById('wallet-addr').textContent = myWallet.slice(0,8)+'...'+myWallet.slice(-6); document.getElementById('wallet-hp').textContent = 'Verificando...'; const sn = document.getElementById('step-name'); if(sn){ sn.style.opacity='1'; sn.style.pointerEvents='auto'; }
@@ -49,6 +53,7 @@ async function connectPhantom() {
 function openPhantomApp() {
   if(isGuest && typeof ws !== 'undefined' && ws) { try { ws.close(); } catch(e) {} }
   const currentUrl = window.location.href;
+  // Deep link de Phantom para abrir esta URL dentro de su navegador
   const deepLink = `https://phantom.app/ul/browse/${currentUrl}`;
   window.location.href = deepLink;
 }
