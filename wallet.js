@@ -27,22 +27,20 @@ async function connectPhantom() {
   await new Promise(r => setTimeout(r, 100));
   const phantom = getPhantom();
   if (!phantom || !phantom.isPhantom) {
-    // Detectar si es móvil
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent); 
     if (isMobile) { 
-      // Si es móvil, mostrar el modal con instrucciones
       document.getElementById('mobile-url-display').textContent = window.location.href;
       document.getElementById('modal-mobile-connect').classList.remove('hidden');
       return; 
     }
-    // Si es PC y no tiene Phantom, mostrar error
+    // FIX: Alerta si no tiene Phantom en PC
+    alert('⚠️ Phantom no detectado. Debes instalar la extensión de Phantom en tu navegador para conectar tu wallet y jugar por HP.');
     document.getElementById('no-phantom').style.display='block'; 
     document.getElementById('no-phantom').innerHTML = 'Phantom no detectado. <a href="https://phantom.app" target="_blank" style="color:#F0997B;text-decoration:underline">Instalalo aqui</a>.'; 
     document.getElementById('btn-phantom').style.display='none'; 
     document.getElementById('btn-guest').style.display='none'; 
     return;
   }
-  // Si Phantom está instalado (PC o móvil), conectar normalmente
   try {
     const resp = await phantom.connect(); const wasGuest = isGuest; myWallet = resp.publicKey.toString(); isGuest = false; 
     document.getElementById('btn-phantom').style.display='none'; document.getElementById('btn-guest').style.display='none'; document.getElementById('wallet-connected').style.display='block'; document.getElementById('wallet-addr').textContent = myWallet.slice(0,8)+'...'+myWallet.slice(-6); document.getElementById('wallet-hp').textContent = 'Verificando...'; const sn = document.getElementById('step-name'); if(sn){ sn.style.opacity='1'; sn.style.pointerEvents='auto'; }
@@ -53,7 +51,6 @@ async function connectPhantom() {
 function openPhantomApp() {
   if(isGuest && typeof ws !== 'undefined' && ws) { try { ws.close(); } catch(e) {} }
   const currentUrl = window.location.href;
-  // Deep link de Phantom para abrir esta URL dentro de su navegador
   const deepLink = `https://phantom.app/ul/browse/${currentUrl}`;
   window.location.href = deepLink;
 }
@@ -79,28 +76,24 @@ function updateHPDisplay(hp){
   if(isGuest) hp = 0; 
   myCurrentHP = hp || 0; 
   
-  // Actualizar textos de HP
   const el=document.getElementById('pick-hp-val'); if(el){ el.textContent=hp+' HP'; el.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } 
   const loginHp=document.getElementById('wallet-hp'); if(loginHp){ loginHp.textContent=hp+' HP'; loginHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } 
   const profHp=document.getElementById('profile-hp'); if(profHp){ profHp.textContent=hp+' HP'; profHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } 
   const profUsdc=document.getElementById('profile-usdc'); if(profUsdc){ profUsdc.textContent=(hp*0.001).toFixed(3)+' USDC'; } 
   
-  // Mostrar/Ocultar Botones de Cashout (Perfil y Lobby)
   const showCashout = hp > 0 && !isGuest;
   const btnProf = document.getElementById('btn-cashout'); 
   if(btnProf){ btnProf.style.display = showCashout ? 'inline-block' : 'none'; btnProf.disabled = false; btnProf.textContent='💰 Cashout'; } 
   const btnLobby = document.getElementById('btn-cashout-lobby'); 
   if(btnLobby){ btnLobby.style.display = showCashout ? 'inline-block' : 'none'; }
   
-  // Botón de la torre
   const btnG = document.getElementById('btn-gauntlet'); 
   if (btnG && typeof GAUNTLET_HABILITADO !== 'undefined') { 
     btnG.style.display = 'inline-block'; 
-    btnG.disabled = false; // El botón del lobby siempre está habilitado
-    btnG.textContent = '🏰 Torre'; 
+    if (isGuest) { btnG.disabled = false; btnG.textContent = '🏰 Torre (XP)'; } 
+    else { btnG.disabled = myCurrentHP < 100; btnG.textContent = '🏰 Torre (100 HP)'; } 
   } 
   
-  // Widgets de depósito
   const lobbyWidget = document.getElementById('lobby-deposit-widget'); if(lobbyWidget) lobbyWidget.innerHTML = depositWidgetHTML(); 
   const profWidget = document.getElementById('profile-deposit-widget'); if(profWidget) profWidget.innerHTML = depositWidgetHTML(); 
   const labWidget = document.getElementById('lab-deposit-widget'); if(labWidget) labWidget.innerHTML = depositWidgetHTML(); 
@@ -119,7 +112,7 @@ async function doCashout(){
   if(btnLobby){btnLobby.disabled=true;btnLobby.textContent='...';} 
   if(!ws || ws.readyState !== 1){ 
     if(btnProf){btnProf.disabled=false;btnProf.textContent='💰 Cashout';} 
-    if(btnLobby){btnLobby.disabled=false;btnLobby.textContent='💰 Cashout';} 
+    if(btnLobby){btnLobby.disabled=false;btnLobby.textContent='💰';} 
     return; 
   } 
   ws.send(JSON.stringify({type:'cashout'})); 

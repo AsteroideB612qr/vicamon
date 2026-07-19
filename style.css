@@ -148,3 +148,34 @@ p.sub{font-size:12px;color:rgba(255,255,255,.4);margin-bottom:18px}
 .chat-input{flex:1;background:rgba(255,255,255,.07);border:0.5px solid rgba(255,255,255,.15);border-radius:8px;padding:10px 14px;color:#fff;font-size:14px;outline:none}
 .chat-input:focus{border-color:rgba(255,255,255,.4)}
 .chat-empty{color:rgba(255,255,255,.3);text-align:center;font-size:12px;margin-top:60px}
+
+/* NUEVO: Animación para botón de Torneo (Glow Pulsante) */
+@keyframes pulse-glow {
+  0% { box-shadow: 0 0 0 0 rgba(246, 226, 102, 0.5); }
+  70% { box-shadow: 0 0 0 12px rgba(246, 226, 102, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(246, 226, 102, 0); }
+}
+.btn-pulse {
+  animation: pulse-glow 2s infinite;
+}
+
+/* NUEVO: Jerarquía visual en el Lobby (Zona de Acción) */
+.lobby-zone {
+  background: rgba(255, 255, 255, 0.02);
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+/* NUEVO: Responsive Laboratorio y Tablero de Torneo */
+@media (max-width: 640px) {
+  .lab-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .bracket-container {
+    transform: scale(0.85);
+    transform-origin: top center;
+    margin-bottom: -40px; /* Compensa el espacio en blanco dejado por el scale */
+  }
+}

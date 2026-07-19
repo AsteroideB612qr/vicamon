@@ -132,6 +132,18 @@ function tickEffects(st, name) {
 
 async function endBattle(bId, winnerId, loserId, winnerHp, forfeit=false) {
   const b = battles.get(bId);
+  
+  // NUEVO: Si es una batalla de torneo, redirigir a tournamentManager
+  if (b && b.isTournament) {
+    const { reportTournamentResult } = require('./tournamentManager');
+    await reportTournamentResult(bId, winnerId, loserId);
+    if (b.p1Wallet) walletToBattle.delete(b.p1Wallet);
+    if (b.p2Wallet) walletToBattle.delete(b.p2Wallet);
+    battles.delete(bId);
+    await pushLobby();
+    return;
+  }
+
   const isCpu = b?.isCpu || false;
   const isTraining = b?.isTraining || false;
   const isLabSimulation = b?.isLabSimulation || false; 
