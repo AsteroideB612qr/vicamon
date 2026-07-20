@@ -26,7 +26,6 @@ function openChallengeMenu(targetId, name, isTrain) {
   pendingChallengeTargetId = targetId; 
   pendingIsTraining = isTrain; 
   isGauntletChallenge = false; 
-  isBoardChallenge = false; 
   const title = isTrain ? `Entrenar con ${name}` : `Batalla por HP con ${name}`; 
   let buttonsHtml = ''; 
   if (isGuest && !isTrain) { alert('Los invitados solo pueden entrenar. Conecta tu wallet para batallas por HP.'); return; } 
@@ -43,34 +42,12 @@ function openChallengeMenu(targetId, name, isTrain) {
 }
 
 function openMasterMenu() {
-  const modal = document.getElementById('modal-master-menu');
-  if (!document.getElementById('btn-test-board')) {
-    const boardBtn = document.createElement('button');
-    boardBtn.id = 'btn-test-board';
-    boardBtn.className = 'btn btn-blue';
-    boardBtn.style.width = '100%';
-    boardBtn.textContent = '♟️ Probar Modo Tablero (CPU)';
-    boardBtn.onclick = () => {
-      document.getElementById('modal-master-menu').classList.add('hidden');
-      isGauntletChallenge = false;
-      isBoardChallenge = true; 
-      teamSelectionMode = '3v3'; 
-      pendingChallengeTargetId = null;
-      pendingIsTraining = true;
-      selectedTeam = [];
-      document.getElementById('ts-mode-title').textContent = 'Modo Tablero (Elige 3)';
-      buildTeamPickGrid();
-      show('s-team-select');
-    };
-    modal.querySelector('.modal').insertBefore(boardBtn, modal.querySelector('.btn-red'));
-  }
-  modal.classList.remove('hidden');
+  document.getElementById('modal-master-menu').classList.remove('hidden');
 }
 
 function selectChallengeMode(mode) { 
   document.getElementById('modal-challenge-mode').classList.add('hidden'); 
   document.getElementById('modal-master-menu').classList.add('hidden'); 
-  isBoardChallenge = false; 
   teamSelectionMode = (mode === '3v3' || mode === 'train3v3') ? '3v3' : '1v1'; 
   pendingIsTraining = (mode === 'train' || mode === 'train3v3'); 
   selectedTeam = []; 
@@ -85,7 +62,7 @@ function selectChallengeMode(mode) {
 function buildTeamPickGrid() { const allKeys=Object.entries(BEASTS); const keys=allKeys.filter(([k,b])=>b.cat!=='Físico'||myPhysicalBeasts.includes(k)); let html=''; keys.forEach(([k,b])=>{ html+=`<div class="bcard" id="tpc-${k}" onclick="toggleTeamBeast('${k}')"><img src="${b.img}" alt="${b.name}"><div class="bname">${b.name}</div><div class="bsub">${b.sub}</div><span class="bstyle" style="${STCSS[b.style]}">${b.style}</span><div class="elbar" style="background:${EL[b.el]}"></div></div>`; }); html+=`<div class="beast-detail" id="team-detail-panel"></div>`; document.getElementById('team-pick-grid').innerHTML=html; updateTeamSelectionUI(); }
 function toggleTeamBeast(k) { const maxPicks = teamSelectionMode === '3v3' ? 3 : 1; const idx = selectedTeam.indexOf(k); if(idx > -1) { selectedTeam.splice(idx, 1); } else { if(selectedTeam.length >= maxPicks) { alert(`Ya elegiste ${maxPicks} Vicamons.`); return; } selectedTeam.push(k); } updateTeamSelectionUI(); }
 function updateTeamSelectionUI() { const maxPicks = teamSelectionMode === '3v3' ? 3 : 1; document.querySelectorAll('#team-pick-grid .bcard').forEach(c => c.classList.remove('sel')); selectedTeam.forEach((k, i) => { const card = document.getElementById('tpc-'+k); if(card) { card.classList.add('sel'); let badge = card.querySelector('.team-badge'); if(!badge) { badge = document.createElement('div'); badge.className = 'team-badge'; badge.style.cssText = 'position:absolute;top:2px;right:2px;background:#4a9eff;color:#fff;width:16px;height:16px;border-radius:50%;font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:bold'; card.appendChild(badge); } badge.textContent = i + 1; } }); document.querySelectorAll('#team-pick-grid .bcard').forEach(c => { if(!c.classList.contains('sel')) { const badge = c.querySelector('.team-badge'); if(badge) badge.remove(); } }); document.getElementById('btn-confirm-team').disabled = selectedTeam.length !== maxPicks; }
-function cancelTeamSelection() { if(pendingFrom !== null) { ws.send(JSON.stringify({type:'reject_challenge', fromId: pendingFrom})); pendingFrom = null; } isGauntletChallenge = false; isBoardChallenge = false; show('s-lobby'); }
+function cancelTeamSelection() { if(pendingFrom !== null) { ws.send(JSON.stringify({type:'reject_challenge', fromId: pendingFrom})); pendingFrom = null; } isGauntletChallenge = false; show('s-lobby'); }
 
 function confirmTeam() { 
   if (isGauntletChallenge) { 
@@ -96,13 +73,6 @@ function confirmTeam() {
     show('s-lobby'); 
     return; 
   } 
-  if (isBoardChallenge) { 
-    myTeam = selectedTeam.slice();
-    ws.send(JSON.stringify({type:'challenge_board_cpu', team: myTeam}));
-    isBoardChallenge = false;
-    show('s-lobby'); 
-    return;
-  }
   let isTraining; 
   if (pendingFrom !== null) { isTraining = pendingIsTraining; } else { isTraining = pendingIsTraining || pendingChallengeTargetId === null; } 
   const mode3v3 = teamSelectionMode === '3v3'; 
@@ -151,7 +121,6 @@ function challengeGauntlet(towerMode) {
   
   if(!confirm(msgText)) return; 
   isGauntletChallenge = true; 
-  isBoardChallenge = false;
   teamSelectionMode = '1v1'; 
   document.getElementById('ts-mode-title').textContent = 'Torre de Batalla (Elige tu inicial)'; 
   selectedTeam = []; 
@@ -190,7 +159,6 @@ function renderLobby(others){ _lastLobbyPlayers=others; const list=document.getE
 function challengeMaster(){ if(!ws || ws.readyState !== 1) return; openChallengeMenu(null, 'Zodiac Master', true); }
 function acceptChallenge(){ document.getElementById('modal-challenged').classList.add('hidden'); stopChallengeBeep(); if(pendingFrom===null) return; if(isGuest && !pendingIsTraining) { alert('Los invitados solo pueden aceptar entrenamientos. Conecta tu wallet para batallas por HP.'); rejectChallenge(); return; } teamSelectionMode = pendingIs3v3 ? '3v3' : '1v1'; selectedTeam = []; const title = (pendingIs3v3 ? '3 vs 3' : '1 vs 1') + (pendingIsTraining ? ' (Entrenamiento)' : ' (Batalla por HP)'); document.getElementById('ts-mode-title').textContent = title; buildTeamPickGrid(); show('s-team-select'); }
 
-// FIX: Enviar el ID del retador al servidor al rechazar
 function rejectChallenge(){ 
     document.getElementById('modal-challenged').classList.add('hidden'); 
     stopChallengeBeep(); 
