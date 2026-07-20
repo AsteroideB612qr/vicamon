@@ -1,177 +1,73 @@
-const http = require('http');
-const fs   = require('fs');
-const path = require('path');
-const { WebSocketServer } = require('ws');
+const BEASTS = global.BEASTS_DB || require('./beasts.js');
+const { getStartState, applyAtk, tickEffects } = require('./battleEngine');
+const { cpuPickAttack } = require('./cpuAI');
 
-const {
-  getHP, addHP, isTxProcessed, markTxProcessed,
-  getPlatformHp, getPlatformUsdc, clearPlatformHp, setPlatformHp, addPlatformHp,
-  PLATFORM_WALLET, PLATFORM_THRESHOLD, USDC_PER_HP,
-  getAllPlayersDebug, adminSetHP, adminResetPlatform, adminUnlockAllHP,
-  getPlayerStats, getPlayerRank, getTotalPlayersHP, getExcedente,
-  getAllAttacksDB, getAllVicamonsDB, saveAttackDB, saveVicamonDB
-} = require('./hp-balance');
-const { sendUSDC } = require('./transfer');
-
-const { setupWebSocketServer } = require('./wsHandlers');
-const { initializeContent } = require('./contentManager');
-const { runMetaSimulation } = require('./simulatorManager'); // NUEVO: Simulador
-
-const ADMIN_PASS = process.env.ADMIN_PASSWORD || process.env.INTERNAL_SECRET || '';
-const OWNER_WALLET = process.env.OWNER_WALLET || ''; 
-
-async function getPlatformUSDCBalance() {
-  const { Connection, PublicKey } = require('@solana/web3.js');
-  const { getAssociatedTokenAddress } = require('@solana/spl-token');
-  const USDC_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
-  const RPCS = ['https://api.mainnet-beta.solana.com', 'https://solana-mainnet.rpc.extrnode.com', 'https://solana.public-rpc.com'];
-  for (const rpc of RPCS) { 
-    try { 
-      const conn = new Connection(rpc, 'confirmed'); 
-      const platformPk = new PublicKey(PLATFORM_WALLET);
-      const platformTA = await getAssociatedTokenAddress(USDC_MINT, platformPk);
-      const info = await conn.getTokenAccountBalance(platformTA); 
-      return parseFloat(info.value.uiAmount || 0); 
-    } catch(e) {} 
-  }
-  return 0;
+function simulateBattle(b1Key, b2Key) {
+    let st1 = getStartState(b1Key);
+    let st2 = getStartState(b2Key);
+    
+    let attacker = 1; // 1 para st1, 2 para st2
+    let turn = 0;
+    
+    while (turn < 50) { // Límite de 50 turnos para evitar bucles infinitos
+        turn++;
+        let aSt = attacker === 1 ? st1 : st2;
+        let dSt = attacker === 1 ? st2 : st1;
+        let bKey = attacker === 1 ? b1Key : b2Key;
+        
+        // Aplicar efectos de turno (veneno, quemadura, etc)
+        tickEffects(aSt, "Bot");
+        if (aSt.hp <= 0) return attacker === 1 ? 2 : 1; // Gana el defensor
+        
+        // Lógica de ataque
+        if (aSt.stun) { 
+            aSt.stun = false; 
+        } else if (aSt.recharge > 0) { 
+            aSt.recharge--; 
+        } else {
+            const idx = cpuPickAttack(aSt, dSt, bKey);
+            const atk = BEASTS[bKey].attacks[idx];
+            if (aSt.pp[idx] < 99) aSt.pp[idx]--;
+            applyAtk(aSt, dSt, atk, "Bot1", "Bot2");
+            
+            if (dSt.hp <= 0) return attacker; // Gana el atacante
+        }
+        
+        attacker = attacker === 1 ? 2 : 1; // Cambio de turno
+    }
+    return 0; // Empate por límite de turnos
 }
 
-async function syncPlatformBalance() {
-  try {
-    const realUsdc = await getPlatformUSDCBalance();
-    const realHp = Math.floor(realUsdc / USDC_PER_HP);
-    await setPlatformHp(realHp);
-    console.log(`[SYNC] Plataforma HP sincronizado a ${realHp} (${realUsdc} USDC)`);
-  } catch(e) {
-    console.error("[SYNC ERROR]", e.message);
-  }
+async function runMetaSimulation() {
+    const keys = Object.keys(BEASTS);
+    const stats = {};
+    keys.forEach(k => stats[k] = { wins: 0, losses: 0, draws: 0 });
+
+    // Todos contra todos (Round Robin)
+    for (let i = 0; i < keys.length; i++) {
+        for (let j = i + 1; j < keys.length; j++) {
+            // Batalla 1: i vs j
+            let winner = simulateBattle(keys[i], keys[j]);
+            if (winner === 1) { stats[keys[i]].wins++; stats[keys[j]].losses++; }
+            else if (winner === 2) { stats[keys[j]].wins++; stats[keys[i]].losses++; }
+            else { stats[keys[i]].draws++; stats[keys[j]].draws++; }
+            
+            // Batalla 2: j vs i (Para ser justos con quién ataca primero)
+            winner = simulateBattle(keys[j], keys[i]);
+            if (winner === 1) { stats[keys[j]].wins++; stats[keys[i]].losses++; }
+            else if (winner === 2) { stats[keys[i]].wins++; stats[keys[j]].losses++; }
+            else { stats[keys[i]].draws++; stats[keys[j]].draws++; }
+        }
+    }
+    
+    // Calcular Win Rate y ordenar
+    const results = Object.entries(stats).map(([key, s]) => {
+        const total = s.wins + s.losses + s.draws;
+        const winRate = total > 0 ? ((s.wins / total) * 100).toFixed(1) : 0;
+        return { key, name: BEASTS[key].name, wins: s.wins, losses: s.losses, draws: s.draws, winRate: parseFloat(winRate) };
+    }).sort((a, b) => b.winRate - a.winRate);
+
+    return results;
 }
-syncPlatformBalance(); 
-setInterval(syncPlatformBalance, 300000); 
 
-const MIME = { '.html':'text/html', '.js':'application/javascript', '.css':'text/css', '.png':'image/png', '.jpg':'image/jpeg', '.gif':'image/gif', '.svg':'image/svg+xml', '.ico':'image/x-icon' };
-
-const server = http.createServer(async (req, res) => {
-  const urlPath = req.url.split('?')[0];
-  
-  if (urlPath === '/ver-db-secreta') { try { const players = await getAllPlayersDebug(); res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(players, null, 2)); } catch(e) { res.writeHead(500); res.end('Error leyendo DB'); } return; }
-  if (urlPath === '/platform-wallet') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ wallet: PLATFORM_WALLET })); return; }
-
-  if (urlPath === '/admin') {
-    fs.readFile(path.join(__dirname, 'admin.html'), (err, data) => {
-      if (err) { res.writeHead(500); res.end('Error loading admin panel'); return; }
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(data);
-    });
-    return;
-  }
-
-  if (urlPath === '/admin-data') { 
-    const pass = new URL(req.url, 'http://localhost').searchParams.get('pass') || ''; 
-    if (pass !== ADMIN_PASS) { res.writeHead(403); res.end('Forbidden'); return; } 
-    try { 
-      await syncPlatformBalance(); 
-      const players = await getAllPlayersDebug(); 
-      const platformHp = await getPlatformHp(); 
-      const playersTotalHp = await getTotalPlayersHP(); 
-      const excedente = platformHp - playersTotalHp; 
-      
-      res.writeHead(200, { 'Content-Type': 'application/json' }); 
-      res.end(JSON.stringify({ 
-        players, 
-        platformHp, 
-        platformUsdc: platformHp * USDC_PER_HP, 
-        playersTotalHp, 
-        playersTotalUsdc: playersTotalHp * USDC_PER_HP, 
-        excedente, 
-        excedenteUsdc: excedente * USDC_PER_HP 
-      })); 
-    } catch(e) { 
-      console.error("Admin data error:", e);
-      res.writeHead(500); res.end('Error'); 
-    } 
-    return; 
-  }
-  
-  if (urlPath === '/admin-update-hp' && req.method === 'POST') { let body = ''; req.on('data', c => body += c); req.on('end', async () => { try { const { pass, wallet, hp } = JSON.parse(body); if (pass !== ADMIN_PASS) { res.writeHead(403); res.end(JSON.stringify({ ok: false })); return; } await adminSetHP(wallet, parseInt(hp)); res.writeHead(200); res.end(JSON.stringify({ ok: true })); } catch(e) { res.writeHead(400); res.end(JSON.stringify({ ok: false })); } }); return; }
-  if (urlPath === '/admin-reset-platform' && req.method === 'POST') { let body = ''; req.on('data', c => body += c); req.on('end', async () => { try { const { pass } = JSON.parse(body); if (pass !== ADMIN_PASS) { res.writeHead(403); res.end(JSON.stringify({ ok: false })); return; } await adminResetPlatform(); res.writeHead(200); res.end(JSON.stringify({ ok: true })); } catch(e) { res.writeHead(400); res.end(JSON.stringify({ ok: false })); } }); return; }
-  if (urlPath === '/admin-unlock-hp' && req.method === 'POST') { let body = ''; req.on('data', c => body += c); req.on('end', async () => { try { const { pass } = JSON.parse(body); if (pass !== ADMIN_PASS) { res.writeHead(403); res.end(JSON.stringify({ ok: false })); return; } await adminUnlockAllHP(); res.writeHead(200); res.end(JSON.stringify({ ok: true })); } catch(e) { res.writeHead(400); res.end(JSON.stringify({ ok: false })); } }); return; }
-  if (urlPath === '/admin-withdraw' && req.method === 'POST') { let body = ''; req.on('data', c => body += c); req.on('end', async () => { try { const { pass } = JSON.parse(body); if (pass !== ADMIN_PASS) { res.writeHead(403); res.end(JSON.stringify({ ok: false, msg: 'Forbidden' })); return; } if (!OWNER_WALLET) { res.writeHead(400); res.end(JSON.stringify({ ok: false, msg: 'OWNER_WALLET no configurada en el servidor' })); return; } const balance = await getPlatformUSDCBalance(); if (balance <= 0.001) { res.writeHead(400); res.end(JSON.stringify({ ok: false, msg: 'No hay suficientes USDC para retirar' })); return; } const sig = await sendUSDC(OWNER_WALLET, balance); const hpToClear = Math.round(balance / USDC_PER_HP); await clearPlatformHp(hpToClear); res.writeHead(200); res.end(JSON.stringify({ ok: true, amount: balance, sig })); } catch(e) { res.writeHead(500); res.end(JSON.stringify({ ok: false, msg: e.message })); } }); return; }
-
-  // RUTAS ADMIN LAB
-  if (urlPath === '/admin-get-content' && req.method === 'GET') {
-    const pass = new URL(req.url, 'http://localhost').searchParams.get('pass') || '';
-    if (pass !== ADMIN_PASS) { res.writeHead(403); res.end('Forbidden'); return; }
-    try {
-      const attacks = await getAllAttacksDB();
-      const vicamons = await getAllVicamonsDB();
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ attacks, vicamons }));
-    } catch(e) { res.writeHead(500); res.end('Error'); }
-    return;
-  }
-  if (urlPath === '/admin-save-attack' && req.method === 'POST') {
-    let body = ''; req.on('data', c => body += c); req.on('end', async () => {
-      try {
-        const { pass, data } = JSON.parse(body);
-        if (pass !== ADMIN_PASS) { res.writeHead(403); res.end(JSON.stringify({ ok: false })); return; }
-        await saveAttackDB(data);
-        await initializeContent(); // Recargar memoria
-        res.writeHead(200); res.end(JSON.stringify({ ok: true }));
-      } catch(e) { res.writeHead(400); res.end(JSON.stringify({ ok: false, msg: e.message })); }
-    });
-    return;
-  }
-  if (urlPath === '/admin-save-vicamon' && req.method === 'POST') {
-    let body = ''; req.on('data', c => body += c); req.on('end', async () => {
-      try {
-        const { pass, data } = JSON.parse(body);
-        if (pass !== ADMIN_PASS) { res.writeHead(403); res.end(JSON.stringify({ ok: false })); return; }
-        await saveVicamonDB(data);
-        await initializeContent(); // Recargar memoria
-        res.writeHead(200); res.end(JSON.stringify({ ok: true }));
-      } catch(e) { res.writeHead(400); res.end(JSON.stringify({ ok: false, msg: e.message })); }
-    });
-    return;
-  }
-  
-  // NUEVO: RUTA SIMULADOR
-  if (urlPath === '/admin-run-simulation' && req.method === 'POST') {
-    let body = ''; req.on('data', c => body += c); req.on('end', async () => {
-      try {
-        const { pass } = JSON.parse(body);
-        if (pass !== ADMIN_PASS) { res.writeHead(403); res.end(JSON.stringify({ ok: false })); return; }
-        const results = await runMetaSimulation();
-        res.writeHead(200); res.end(JSON.stringify({ ok: true, results }));
-      } catch(e) { res.writeHead(400); res.end(JSON.stringify({ ok: false, msg: e.message })); }
-    });
-    return;
-  }
-
-  if (urlPath === '/hp') { 
-    const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet') || ''; 
-    if (wallet.startsWith('guest_')) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ hp: 0, wallet, stats: { wins: 0, losses: 0, rank: null } })); return; } 
-    const hp = await getHP(wallet); 
-    const stats = await getPlayerStats(wallet); 
-    const rank = await getPlayerRank(wallet); 
-    res.writeHead(200, { 'Content-Type': 'application/json' }); 
-    res.end(JSON.stringify({ hp, wallet, stats: { wins: stats.wins, losses: stats.losses, rank } })); 
-    return; 
-  }
-  
-  if (urlPath === '/payment' && req.method === 'POST') { const secret = req.headers['x-internal-secret']; if (secret !== (process.env.INTERNAL_SECRET || 'dev-secret')) { res.writeHead(403); res.end(JSON.stringify({ error: 'Forbidden' })); return; } let body = ''; req.on('data', c => body += c); req.on('end', async () => { try { const { wallet, amount, signature, memo } = JSON.parse(body); if (await isTxProcessed(signature)) { res.writeHead(200); res.end(JSON.stringify({ ok: false, reason: 'duplicate' })); return; } const hp = Math.round((amount / 100_000) * 100); const { broadcast, lobby, send } = require('./state'); const newBalance = await addHP(wallet, hp); await addPlatformHp(hp); lobby.forEach(p => { if (p.wallet === wallet) send(p.ws, { type: 'hp_updated', hp: newBalance }); }); await markTxProcessed(signature); res.writeHead(200); res.end(JSON.stringify({ ok: true, wallet, hp, newBalance })); syncPlatformBalance(); } catch (e) { res.writeHead(400); res.end(JSON.stringify({ error: e.message })); } }); return; }
-  
-  const file = urlPath === '/' ? '/index.html' : urlPath;
-  const fp = path.join(__dirname, file);
-  fs.readFile(fp, (err, data) => { if (err) { res.writeHead(404); res.end('Not found'); return; } res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream' }); res.end(data); });
-});
-
-const wss = new WebSocketServer({ server });
-setupWebSocketServer(wss, getPlatformUSDCBalance);
-setTimeout(() => { try { require('./payment-monitor'); } catch(e) { console.error('[ERROR] Monitor:', e.message); } }, 5000);
-
-initializeContent().then(() => {
-  const PORT = process.env.PORT || 3000;
-  server.listen(PORT, () => console.log(`Zodiac Battle corriendo en http://localhost:${PORT}`));
-});
+module.exports = { runMetaSimulation };

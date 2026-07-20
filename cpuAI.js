@@ -1,107 +1,32 @@
-const BEASTS_FALLBACK = require('./beasts.js');
-const { getAllAttacksDB, getAllVicamonsDB, saveAttackDB, saveVicamonDB } = require('./hp-balance');
+const BEASTS = require('./beasts.js');
 
-let ATTACKS = {};
-let BEASTS = {};
-
-// NUEVO: Clasificador automático de ataques
-function classifyAttackType(atk) {
-  // Si no hace daño, es un Buff/Defensa/Utilidad
-  if (!atk.d || atk.d === 0) {
-    if (atk.fx === 'chaos' || atk.fx === 'chaosHi') return 'especial'; // El caos es especial
-    return 'buff';
+// El cerebro unificado de la IA. Si necesitas ajustar la dificultad, solo cambias este archivo.
+function cpuPickAttack(cpuSt, oppSt, beastKey) {
+  const atks = BEASTS[beastKey]?.attacks || [];
+  const validIndices = []; const weights = [];
+  
+  atks.forEach((a, i) => {
+    if (cpuSt.pp[i] > 0 || cpuSt.pp[i] === undefined || cpuSt.pp[i] === 99) {
+      validIndices.push(i); 
+      let s = 2; // Peso base
+      if (a.d > 30 && oppSt.hp < 40) s = 5; // Rematar
+      if ((a.fx === 'poison5' || a.fx === 'poison3l') && oppSt.poisonTurns === 0 && oppSt.hp > 40) s = 4;
+      if ((a.fx === 'heal20' || a.fx === 'heal30' || a.fx === 'fortress') && cpuSt.hp < 35) s = 5;
+      if ((a.fx === 'shield2' || a.fx === 'shield1r') && cpuSt.hp < 45 && cpuSt.shield === 0) s = 4;
+      if (a.fx === 'poisonDouble' && oppSt.poisonTurns > 0) s = 6;
+      if (a.fx === 'recharge' && cpuSt.recharge === 0 && oppSt.hp > 60) s = 1;
+      weights.push(s);
+    }
+  });
+  
+  if (validIndices.length === 0) return 0;
+  const tot = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * tot, idx = validIndices[0];
+  for (let i = 0; i < validIndices.length; i++) { 
+    r -= weights[i]; 
+    if (r <= 0) { idx = validIndices[i]; break; } 
   }
-  // Si tiene un efecto de estado, es Mixto
-  if (atk.fx && atk.fx !== 'null') return 'mixto';
-  
-  // Si tiene auto-daño, ignora escudo, o es un golpe muy fuerte/impreciso, es Especial
-  if (atk.self > 0 || atk.pierce || atk.d >= 28 || (atk.d >= 20 && atk.acc < 85)) return 'especial';
-  
-  // Por descarte, es Básico
-  return 'basico';
+  return idx;
 }
 
-async function initializeContent() {
-  try {
-    console.log("[CONTENT] Inicializando contenido desde BD...");
-    
-    // Sincronizar y reparar datos desde beasts.js (incluyendo el nuevo 'type')
-    for (const key in BEASTS_FALLBACK) {
-      const beast = BEASTS_FALLBACK[key];
-      for (let i = 0; i < beast.attacks.length; i++) {
-        const atk = beast.attacks[i];
-        const atkId = `${key}_atk${i+1}`;
-        
-        // NUEVO: Calcular el tipo automáticamente
-        const attackType = classifyAttackType(atk);
-        
-        const atkData = { 
-          id: atkId, 
-          name: atk.n, 
-          d: atk.d, 
-          acc: atk.acc, 
-          fx: atk.fx, 
-          pp: atk.pp, 
-          desc: atk.desc, 
-          type: attackType, // Asignamos el tipo calculado
-          cost: 0 
-        };
-        await saveAttackDB(atkData);
-      }
-    }
-
-    let dbAttacks = await getAllAttacksDB();
-    let dbVicamons = await getAllVicamonsDB();
-
-    // Si la BD está vacía, migramos desde beasts.js (Solo ocurre la primera vez)
-    if (dbVicamons.length === 0) {
-      console.log("[CONTENT] BD vacía. Migrando datos iniciales desde beasts.js...");
-      
-      // Migrar Vicamons
-      for (const key in BEASTS_FALLBACK) {
-        const b = BEASTS_FALLBACK[key];
-        const atkIds = b.attacks.map((_, i) => `${key}_atk${i+1}`);
-        const vicamonData = {
-          id: key, name: b.name, sub: b.sub, img: b.img, el: b.el, style: b.style, cat: b.cat,
-          stats: b.stats || null, attacks: atkIds
-        };
-        await saveVicamonDB(vicamonData);
-      }
-      
-      dbAttacks = await getAllAttacksDB();
-      dbVicamons = await getAllVicamonsDB();
-      console.log("[CONTENT] Migración completada.");
-    }
-
-    // Cargar en Memoria
-    ATTACKS = {};
-    dbAttacks.forEach(a => ATTACKS[a.id] = a);
-
-    BEASTS = {};
-    dbVicamons.forEach(v => {
-      // Reconstruir el objeto Vicamon como lo espera el motor de batalla
-      BEASTS[v.id] = {
-        name: v.name, sub: v.sub, img: v.img, el: v.el, style: v.style, cat: v.cat,
-        stats: v.stats,
-        attacks: v.attacks.map(atkId => {
-          const atkData = ATTACKS[atkId];
-          if (!atkData) return { n: 'Desconocido', d: 0, acc: 100, pp: 99, desc: 'Error' };
-          return { n: atkData.name, d: atkData.d, acc: atkData.acc, fx: atkData.fx, pp: atkData.pp, desc: atkData.description };
-        })
-      };
-    });
-
-    console.log(`[CONTENT] ${Object.keys(BEASTS).length} Vicamons y ${Object.keys(ATTACKS).length} Ataques cargados en memoria.`);
-    
-    // Exponer globalmente para que el resto del servidor los use en lugar de beasts.js
-    global.BEASTS_DB = BEASTS;
-    global.ATTACKS_DB = ATTACKS;
-
-  } catch(e) {
-    console.error("[CONTENT ERROR] No se pudo cargar desde BD. Usando fallback beasts.js", e);
-    global.BEASTS_DB = BEASTS_FALLBACK;
-    global.ATTACKS_DB = {};
-  }
-}
-
-module.exports = { initializeContent };
+module.exports = { cpuPickAttack };

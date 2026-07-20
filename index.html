@@ -1,231 +1,408 @@
-const { Pool } = require('pg');
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VICAMON (Dev)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
-});
+<button id="btn-mute" onclick="toggleMute()" style="position:fixed;top:15px;right:15px;background:rgba(255,255,255,.07);border:0.5px solid rgba(255,255,255,.18);border-radius:99px;width:40px;height:40px;cursor:pointer;color:#fff;font-size:18px;z-index:9999;backdrop-filter:blur(4px)">🔊</button>
 
-pool.query(`CREATE TABLE IF NOT EXISTS players (wallet VARCHAR(50) PRIMARY KEY, hp INTEGER DEFAULT 0, locked_hp INTEGER DEFAULT 0);`).catch(e => console.error("Error creando tabla players:", e));
-pool.query(`CREATE TABLE IF NOT EXISTS platform (id INTEGER PRIMARY KEY DEFAULT 1, hp INTEGER DEFAULT 0);`).catch(e => console.error("Error creando tabla platform:", e));
-pool.query(`CREATE TABLE IF NOT EXISTS processed_txs (signature VARCHAR(100) PRIMARY KEY);`).catch(e=>{});
-pool.query(`INSERT INTO platform (id, hp) VALUES (1, 0) ON CONFLICT DO NOTHING;`).catch(e=>{});
-pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS wins INTEGER DEFAULT 0;`).catch(e=>{});
-pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS losses INTEGER DEFAULT 0;`).catch(e=>{});
-pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS last_name VARCHAR(20);`).catch(e=>{});
-pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS tower_train_date VARCHAR(10);`).catch(e=>{});
-pool.query(`CREATE TABLE IF NOT EXISTS attacks (id VARCHAR(50) PRIMARY KEY, name VARCHAR(50), d INT, acc INT, fx VARCHAR(50), pp INT, description TEXT, type VARCHAR(20), cost INT);`).catch(e => console.error("Error creando tabla attacks:", e));
-pool.query(`CREATE TABLE IF NOT EXISTS vicamons (id VARCHAR(50) PRIMARY KEY, name VARCHAR(50), sub VARCHAR(50), img VARCHAR(100), el VARCHAR(20), style VARCHAR(20), cat VARCHAR(20), stats JSONB, attacks JSONB);`).catch(e => console.error("Error creando tabla vicamons:", e));
+<!-- LOGIN -->
+<div id="s-login" class="screen active">
+  <div class="login-logo" style="padding:0;background:none;-webkit-text-fill-color:initial"><img src="vicamon-logo.png" alt="VICAMON" style="max-width:280px;width:90%"></div>
+  <div class="login-sub">The Vitality Cash Game · Dev</div>
+  <div class="login-box">
+    <div id="step-wallet" style="margin-bottom:16px">
+      <div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em">Conecta tu wallet o juega gratis</div>
+      <button class="btn" id="btn-phantom" style="width:100%;padding:11px;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px" onclick="connectPhantom()">👻 Conectar Phantom</button>
+      <button class="btn" id="btn-guest" style="width:100%;padding:11px;display:flex;align-items:center;justify-content:center;gap:10px;background:rgba(93,202,165,.14);border-color:rgba(93,202,165,.35);color:#5DCAA5" onclick="playAsGuest()">🎮 Jugar sin Wallet (Solo XP)</button>
+      <div id="wallet-connected" style="display:none;background:rgba(93,202,165,.1);border:0.5px solid rgba(93,202,165,.3);border-radius:8px;padding:10px 12px;margin-top:8px">
+        <div style="font-size:10px;color:#5DCAA5;margin-bottom:2px">✓ Wallet conectada</div>
+        <div id="wallet-addr" style="font-size:11px;color:rgba(255,255,255,.6);font-family:monospace"></div>
+        <div style="margin-top:6px;display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:11px;color:rgba(255,255,255,.4)">HP disponibles:</span>
+          <span id="wallet-hp" style="font-size:13px;font-weight:600;color:#5DCAA5">Verificando...</span>
+        </div>
+      </div>
+      <div id="no-phantom" style="display:none;background:rgba(240,153,122,.1);border:0.5px solid rgba(240,153,122,.3);border-radius:8px;padding:10px 12px;margin-top:8px;font-size:12px;color:#F0997B">
+        Phantom no detectado. <a href="https://phantom.app" target="_blank" style="color:#F0997B;text-decoration:underline">Instalalo aqui</a> y recarga la pagina.
+      </div>
+    </div>
+    <div id="step-name" style="opacity:.4;pointer-events:none">
+      <div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em">Tu nombre de combate</div>
+      <input id="inp-name" placeholder="Nickname" maxlength="20" autocomplete="off" style="width:100%;background:rgba(255,255,255,.07);border:0.5px solid rgba(255,255,255,.15);border-radius:8px;padding:11px 14px;color:#fff;font-size:15px;outline:none;margin-bottom:12px">
+      <button class="btn btn-blue" id="btn-continue" style="width:100%;padding:11px" onclick="goProfile()">Continuar →</button>
+    </div>
+    <div id="step-charge" style="display:none;margin-top:14px;background:rgba(74,158,255,.06);border:0.5px solid rgba(74,158,255,.2);border-radius:10px;padding:12px">
+      <div style="font-size:11px;color:#85B7EB;margin-bottom:5px">💡 Deposita USDC para batallar por HP</div>
+      <div style="font-size:11px;color:rgba(255,255,255,.45);margin-bottom:8px">0.10 USDC = 100 HP · cualquier monto funciona</div>
+      <div style="background:rgba(0,0,0,.35);border-radius:6px;padding:8px 10px;font-family:monospace;font-size:10px;color:#85B7EB;word-break:break-all;margin-bottom:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center" onclick="copyWallet()">
+        <span>DIRECCION_WALLET_A</span>
+        <span style="font-size:10px;margin-left:8px;white-space:nowrap">📋 copiar</span>
+      </div>
+      <button class="btn btn-sm" style="width:100%;font-size:11px" onclick="checkHPNow()">Ya deposité — verificar HP</button>
+    </div>
+  </div>
+</div>
 
-const USDC_PER_HP = 0.001;
-const PLATFORM_WALLET = process.env.PLATFORM_WALLET || 'U3jwNBDnw4kCQ5CYRp5mAf4hbr4dadyUGXDhXdyLXMv';
+<!-- PROFILE -->
+<div id="s-profile" class="screen">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+    <h1 style="margin:0">Perfil del Entrenador</h1>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-sm" id="btn-cashout" style="display:none;background:rgba(239,159,39,.15);border-color:rgba(239,159,39,.35);color:#EF9F27" onclick="doCashout()">💰 Cashout</button>
+      <button class="btn btn-sm btn-red" onclick="disconnectWallet()">🚪 Desconectar Wallet</button>
+    </div>
+  </div>
+  <div id="guest-upgrade-banner" style="display:none;background:linear-gradient(135deg,rgba(246,226,102,.15),rgba(245,166,35,.15));border:0.5px solid rgba(246,226,102,.4);border-radius:12px;padding:16px;margin-bottom:16px;text-align:center">
+    <div style="font-size:18px;margin-bottom:8px">🔥</div>
+    <div style="font-size:15px;font-weight:600;color:#F6E265;margin-bottom:4px">¡Conecta tu Wallet para ganar HP!</div>
+    <div style="font-size:12px;color:rgba(255,255,255,.5);margin-bottom:12px">Estás jugando como invitado. Conecta Phantom para guardar tus recompensas y batallar por HP.</div>
+    <button class="btn btn-blue" style="background:rgba(246,226,102,.2);border-color:rgba(246,226,102,.4);color:#F6E265" onclick="connectPhantom()">👻 Conectar Phantom</button>
+  </div>
+  <div style="background:rgba(255,255,255,.04);border:0.5px solid rgba(255,255,255,.1);border-radius:12px;padding:16px;margin-bottom:16px">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
+      <div style="font-size:22px;font-weight:700;color:#fff" id="profile-name">Cargando...</div>
+      <button class="btn btn-sm" style="margin-left:auto;padding:5px 10px" onclick="toggleEditName()">✏️ Cambiar</button>
+    </div>
+    <div id="edit-name-box" style="display:none;margin-bottom:12px">
+      <input id="inp-edit-name" style="width:100%;background:rgba(255,255,255,.07);border:0.5px solid rgba(255,255,255,.15);border-radius:8px;padding:8px;color:#fff;font-size:14px;outline:none;margin-bottom:8px">
+      <button class="btn btn-blue btn-sm" style="width:100%" onclick="saveNickname()">Guardar Nickname</button>
+    </div>
+    <div id="profile-wallet-box" style="background:rgba(0,0,0,.3);padding:8px 10px;border-radius:6px;margin-bottom:12px">
+      <div style="font-size:10px;color:rgba(255,255,255,.3)">Tu Wallet</div>
+      <div style="font-size:11px;color:rgba(255,255,255,.6);font-family:monospace" id="profile-wallet">Conectando...</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px">
+      <div style="background:rgba(0,0,0,.3);padding:10px;border-radius:8px;text-align:center">
+        <div style="font-size:11px;color:rgba(255,255,255,.4)">HP Disponibles</div>
+        <div style="font-size:18px;font-weight:700;color:#5DCAA5" id="profile-hp">0 HP</div>
+        <div style="font-size:10px;color:rgba(255,255,255,.3)" id="profile-usdc">0.000 USDC</div>
+      </div>
+      <div style="background:rgba(0,0,0,.3);padding:10px;border-radius:8px;text-align:center">
+        <div style="font-size:11px;color:rgba(255,255,255,.4)">Victorias / Derrotas</div>
+        <div style="font-size:18px;font-weight:700;color:#fff"><span id="profile-wins" style="color:#5DCAA5">0</span> / <span id="profile-losses" style="color:#F0997B">0</span></div>
+      </div>
+      <div style="background:rgba(0,0,0,.3);padding:10px;border-radius:8px;text-align:center">
+        <div style="font-size:11px;color:rgba(255,255,255,.4)">Puesto en Ranking</div>
+        <div style="font-size:18px;font-weight:700;color:#CFA9EC" id="profile-rank">Sin clasificado</div>
+      </div>
+    </div>
+    <div style="background:rgba(130,80,180,.1);border:0.5px solid rgba(130,80,180,.3);border-radius:8px;padding:10px;text-align:center;margin-bottom:16px">
+      <div style="font-size:11px;color:rgba(255,255,255,.4)">Rango</div>
+      <div style="font-size:14px;font-weight:600;color:#CFA9EC">🔒 Próximamente</div>
+    </div>
+  </div>
+  
+  <div id="profile-deposit-widget" style="margin-bottom:16px"></div>
+  
+  <div style="display:flex;gap:8px;margin-bottom:20px">
+    <button class="btn btn-blue" style="flex:1" onclick="enterLobby()">⚔️ Ir al Lobby →</button>
+    <button class="btn btn-blue" style="flex:1;background:rgba(216,90,48,.14);border-color:rgba(216,90,48,.35);color:#F0997B" onclick="show('s-lab')">🧪 VicaLab →</button>
+  </div>
 
-// FIX: Caché en memoria para evitar caída del servidor por exceso de consultas
-let cachedExcedente = 0;
-async function updateCachedExcedente() {
-  try {
-    const platformHp = await getPlatformHp();
-    const playersHp = await getTotalPlayersHP();
-    cachedExcedente = platformHp - playersHp;
-  } catch(e) { console.error("Error actualizando excedente caché:", e); }
-}
-// Actualizar el excedente cada 10 segundos en segundo plano
-setInterval(updateCachedExcedente, 10000);
-updateCachedExcedente(); // Llamada inicial
+  <div style="background:rgba(255,255,255,.04);border:0.5px solid rgba(255,255,255,.1);border-radius:12px;padding:16px;margin-bottom:16px">
+    <h2 style="margin:0 0 10px 0;font-size:16px">🔗 Invocaciones Físicas</h2>
+    <p style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:12px">Escanea el QR o ingresa el código de tu llavero para invocar a tu Vicamon real durante esta sesión.</p>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <input id="inp-physical-code" placeholder="Ej: IRON-001" style="flex:1;background:rgba(255,255,255,.07);border:0.5px solid rgba(255,255,255,.15);border-radius:8px;padding:8px 12px;color:#fff;font-size:14px;outline:none;text-transform:uppercase">
+      <button class="btn btn-blue btn-sm" onclick="redeemPhysicalCode()">Invocar</button>
+      <button class="btn btn-sm" style="background:rgba(246,226,102,.2);border-color:rgba(246,226,102,.4);color:#F6E265;min-width:45px" onclick="openQRScanner()">📷</button>
+    </div>
+    <div id="physical-beasts-list" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"></div>
+  </div>
 
-async function getAllPlayersDebug() { const res = await pool.query('SELECT wallet, hp, locked_hp, wins, losses, last_name FROM players'); return res.rows; }
-async function isTxProcessed(signature) { const res = await pool.query('SELECT 1 FROM processed_txs WHERE signature = $1', [signature]); return res.rows.length > 0; }
-async function markTxProcessed(signature) { await pool.query('INSERT INTO processed_txs (signature) VALUES ($1) ON CONFLICT DO NOTHING', [signature]); }
-async function adminSetHP(wallet, hp) { await pool.query(`INSERT INTO players (wallet, hp) VALUES ($1, $2) ON CONFLICT (wallet) DO UPDATE SET hp = $2`, [wallet, hp]); return await getHP(wallet); }
-async function adminResetPlatform() { await pool.query('UPDATE platform SET hp = 0 WHERE id = 1'); }
-async function adminUnlockAllHP() { await pool.query('UPDATE players SET hp = hp + locked_hp, locked_hp = 0'); }
-async function updatePlayerName(wallet, name) { await pool.query(`INSERT INTO players (wallet, last_name) VALUES ($1, $2) ON CONFLICT (wallet) DO UPDATE SET last_name = $2`, [wallet, name]); }
-async function updatePlayerStats(winnerWallet, loserWallet) { await pool.query('UPDATE players SET wins = wins + 1 WHERE wallet = $1', [winnerWallet]); await pool.query('UPDATE players SET losses = losses + 1 WHERE wallet = $1', [loserWallet]); }
-async function getTopPlayers(limit = 3) { const res = await pool.query('SELECT last_name, wins, losses FROM players WHERE wins > 0 ORDER BY wins DESC, losses ASC LIMIT $1', [limit]); return res.rows; }
-async function getPlayerStats(wallet) { const res = await pool.query('SELECT wins, losses FROM players WHERE wallet = $1', [wallet]); if (res.rows.length > 0) return res.rows[0]; return { wins: 0, losses: 0 }; }
-async function getPlayerRank(wallet) { const pRes = await pool.query('SELECT wins, losses FROM players WHERE wallet = $1', [wallet]); if (pRes.rows.length === 0 || pRes.rows[0].wins === 0) return null; const { wins, losses } = pRes.rows[0]; const rRes = await pool.query('SELECT COUNT(*) + 1 as rank FROM players WHERE wins > $1 OR (wins = $1 AND losses < $2)', [wins, losses]); return parseInt(rRes.rows[0].rank, 10); }
-async function getHP(wallet) { const res = await pool.query('SELECT hp FROM players WHERE wallet = $1', [wallet]); return res.rows.length > 0 ? res.rows[0].hp : 0; }
-async function addHP(wallet, hp) { await pool.query(`INSERT INTO players (wallet, hp, locked_hp) VALUES ($1, $2, 0) ON CONFLICT (wallet) DO UPDATE SET hp = players.hp + $2`, [wallet, hp]); return await getHP(wallet); }
-async function hasHP(wallet, amount = 100) { return (await getHP(wallet)) >= amount; }
-async function lockHP(wallet, amount = 100) { const client = await pool.connect(); try { await client.query('BEGIN'); const res = await client.query('SELECT hp FROM players WHERE wallet = $1 FOR UPDATE', [wallet]); const currentHp = res.rows.length > 0 ? res.rows[0].hp : 0; if (currentHp < amount) { await client.query('ROLLBACK'); return false; } await client.query('UPDATE players SET hp = hp - $1, locked_hp = locked_hp + $1 WHERE wallet = $2', [amount, wallet]); await client.query('COMMIT'); return true; } catch(e) { await client.query('ROLLBACK'); return false; } finally { client.release(); } }
-async function unlockHP(wallet, amount = 100) { await pool.query('UPDATE players SET hp = hp + $1, locked_hp = GREATEST(0, locked_hp - $1) WHERE wallet = $2', [amount, wallet]); }
-async function settleMatch(winnerWallet, loserWallet, winnerHp) { const client = await pool.connect(); try { await client.query('BEGIN'); const hp = Math.max(0, Math.min(100, winnerHp)); await client.query('UPDATE players SET locked_hp = GREATEST(0, locked_hp - 100), hp = hp + 100 + $1 WHERE wallet = $2', [hp, winnerWallet]); await client.query('UPDATE players SET locked_hp = GREATEST(0, locked_hp - 100) WHERE wallet = $1', [loserWallet]); await client.query('UPDATE platform SET hp = hp + (100 - $1) WHERE id = 1', [hp]); await client.query('COMMIT'); const winnerNewHp = await getHP(winnerWallet); const platformHp = await getPlatformHp(); return { winnerNewHp, platformHp, platformUsdc: parseFloat((platformHp * USDC_PER_HP).toFixed(3)) }; } catch(e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); } }
-async function settleTeamMatch(winnerWallet, loserWallet, winnerRemainingHp) { const client = await pool.connect(); try { await client.query('BEGIN'); const hp = Math.max(0, Math.min(300, winnerRemainingHp)); await client.query('UPDATE players SET locked_hp = GREATEST(0, locked_hp - 300), hp = hp + 300 + $1 WHERE wallet = $2', [hp, winnerWallet]); await client.query('UPDATE players SET locked_hp = GREATEST(0, locked_hp - 300) WHERE wallet = $1', [loserWallet]); await client.query('UPDATE platform SET hp = hp + (300 - $1) WHERE id = 1', [hp]); await client.query('COMMIT'); const winnerNewHp = await getHP(winnerWallet); return { winnerNewHp }; } catch(e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); } }
+  <div class="chat-wrap" style="border-top:0.5px solid rgba(255,255,255,.1);padding-top:16px">
+    <h2 style="margin:0 0 10px 0;font-size:16px">📖 Bestiario Vicamon</h2>
+    <p style="font-size:11px;color:rgba(255,255,255,.3);margin-bottom:10px">Estudia los ataques de cada Vicamon para armar tu estrategia.</p>
+    <div class="beast-grid" id="bestiary-grid"></div>
+    <div class="beast-detail" id="bestiary-detail-panel"></div>
+  </div>
+</div>
 
-function calculateGauntletReward(defeatedCount) {
-  if (defeatedCount <= 5) return 0;
-  if (defeatedCount === 6) return 10;
-  if (defeatedCount === 7) return 10;
-  if (defeatedCount === 8) return 30;
-  if (defeatedCount === 9) return 30;
-  if (defeatedCount === 10) return 30;
-  if (defeatedCount === 11) return 40;
-  if (defeatedCount >= 12) return 200; 
-  return 0;
-}
+<!-- LABORATORIO VICAMON -->
+<div id="s-lab" class="screen">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <h1 style="margin:0">🧪 VicaLab</h1>
+    <button class="btn btn-sm" onclick="show('s-profile')">⬅ Volver</button>
+  </div>
+  <div style="background:rgba(216,90,48,.1);border:0.5px solid rgba(216,90,48,.3);border-radius:8px;padding:10px;margin-bottom:16px;font-size:12px;color:#F0997B;text-align:center">⚠️ ¡Atención! Las creaciones no se guardan en borrador.</div>
+  <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(0,0,0,.3);padding:10px;border-radius:8px;margin-bottom:10px">
+    <div style="font-size:12px;color:rgba(255,255,255,.5)">HP Disponibles: <span id="lab-hp-val" style="color:#5DCAA5;font-weight:700">0 HP</span></div>
+  </div>
+  <div id="lab-deposit-widget" style="margin-bottom:16px"></div>
+  <div class="lab-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+    <div>
+      <h3 style="margin-bottom:10px">1. Apariencia</h3>
+      <div style="background:rgba(255,255,255,.04);border:0.5px solid rgba(255,255,255,.1);border-radius:12px;padding:16px;text-align:center">
+        <canvas id="lab-canvas" width="100" height="100" style="width:100px;height:100px;image-rendering:pixelated;border:1px dashed rgba(255,255,255,.2);margin-bottom:10px;background:#111"></canvas>
+        <input type="file" id="lab-img-input" accept="image/*" style="font-size:11px;margin-bottom:10px;width:100%">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:rgba(255,255,255,.5);margin-bottom:5px"><span>Pixelado:</span><input type="range" id="lab-pixel-size" min="1" max="4" value="2" style="width:60%" oninput="processLabImage()"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:rgba(255,255,255,.5)"><span>Colores:</span><input type="range" id="lab-color-palette" min="4" max="32" value="16" style="width:60%" oninput="processLabImage()"></div>
+      </div>
+      <h3 style="margin:16px 0 10px 0">2. Identidad</h3>
+      <input id="lab-name" placeholder="Nombre" maxlength="15" style="width:100%;background:rgba(255,255,255,.07);border:0.5px solid rgba(255,255,255,.15);border-radius:8px;padding:8px 12px;color:#fff;font-size:14px;outline:none;margin-bottom:8px">
+      <input id="lab-sub" placeholder="Subtítulo" maxlength="30" style="width:100%;background:rgba(255,255,255,.07);border:0.5px solid rgba(255,255,255,.15);border-radius:8px;padding:8px 12px;color:#fff;font-size:14px;outline:none;margin-bottom:8px">
+      <select id="lab-element" style="width:100%;background:rgba(255,255,255,.07);border:0.5px solid rgba(255,255,255,.15);border-radius:8px;padding:8px 12px;color:#fff;font-size:14px;outline:none">
+        <option value="fuego" style="background:#1a1a24;color:#fff">Fuego</option><option value="tierra" style="background:#1a1a24;color:#fff">Tierra</option><option value="aire" style="background:#1a1a24;color:#fff">Aire</option><option value="agua" style="background:#1a1a24;color:#fff">Agua</option>
+      </select>
+    </div>
+    <div>
+      <h3 style="margin-bottom:10px">3. Movimientos</h3>
+      <div style="background:rgba(255,255,255,.04);border:0.5px solid rgba(255,255,255,.1);border-radius:12px;padding:12px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:8px"><span style="color:#F6E265">Débil</span><span style="color:#5DCAA5">Balance</span><span style="color:#F0997B">Roto</span></div>
+        <div style="position:relative;height:8px;background:linear-gradient(90deg, #F6E265 0%, #5DCAA5 50%, #F0997B 100%);border-radius:99px;overflow:hidden"><div id="lab-balance-marker" style="position:absolute;top:-2px;left:50%;width:4px;height:12px;background:#fff;border-radius:99px;transform:translateX(-50%);transition:left .3s;box-shadow:0 0 4px rgba(0,0,0,.8)"></div></div>
+        <div id="lab-balance-msg" style="font-size:11px;color:#5DCAA5;margin-top:8px;text-align:center;height:15px"></div>
+      </div>
+      <div id="lab-moves-container" style="display:flex;flex-direction:column;gap:10px">
+        <div class="lab-move-box" style="background:rgba(0,0,0,.2);border-radius:8px;padding:10px"><select class="lab-mv-select" style="width:100%;background:rgba(255,255,255,.07);border:0.5px solid rgba(255,255,255,.15);border-radius:6px;padding:6px;color:#fff;font-size:12px;outline:none"></select><div class="lab-mv-desc" style="font-size:10px;color:rgba(255,255,255,.6);margin-top:6px;min-height:30px"></div></div>
+        <div class="lab-move-box" style="background:rgba(0,0,0,.2);border-radius:8px;padding:10px"><select class="lab-mv-select" style="width:100%;background:rgba(255,255,255,.07);border:0.5px solid rgba(255,255,255,.15);border-radius:6px;padding:6px;color:#fff;font-size:12px;outline:none"></select><div class="lab-mv-desc" style="font-size:10px;color:rgba(255,255,255,.6);margin-top:6px;min-height:30px"></div></div>
+        <div class="lab-move-box" style="background:rgba(0,0,0,.2);border-radius:8px;padding:10px"><select class="lab-mv-select" style="width:100%;background:rgba(255,255,255,.07);border:0.5px solid rgba(255,255,255,.15);border-radius:6px;padding:6px;color:#fff;font-size:12px;outline:none"></select><div class="lab-mv-desc" style="font-size:10px;color:rgba(255,255,255,.6);margin-top:6px;min-height:30px"></div></div>
+        <div class="lab-move-box" style="background:rgba(0,0,0,.2);border-radius:8px;padding:10px"><select class="lab-mv-select" style="width:100%;background:rgba(255,255,255,.07);border:0.5px solid rgba(255,255,255,.15);border-radius:6px;padding:6px;color:#fff;font-size:12px;outline:none"></select><div class="lab-mv-desc" style="font-size:10px;color:rgba(255,255,255,.6);margin-top:6px;min-height:30px"></div></div>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top:20px;text-align:center;display:flex;flex-direction:column;gap:10px">
+    <button class="btn btn-lg" style="width:100%;background:rgba(93,202,165,.14);border-color:rgba(93,202,165,.35);color:#5DCAA5" onclick="simulateLabVicamon()">⚔️ Probar en Simulación (Gratis)</button>
+    <button class="btn btn-blue btn-lg" id="lab-submit-btn" onclick="submitLabVicamon()" style="width:100%;background:rgba(246,226,102,.15);border-color:rgba(246,226,102,.35);color:#F6E265">🔒 Enviar a Revisión (Costo: 3000 HP)</button>
+  </div>
+</div>
 
-async function settleGauntletTiered(wallet, defeatedCount) { 
-  const client = await pool.connect(); 
-  try { 
-    await client.query('BEGIN'); 
-    const reward = calculateGauntletReward(defeatedCount);
-    const platformProfit = 100 - reward;
-    await client.query('UPDATE players SET locked_hp = GREATEST(0, locked_hp - 100), hp = hp + $1 WHERE wallet = $2', [reward, wallet]); 
-    if (platformProfit > 0) {
-      await client.query('UPDATE platform SET hp = hp + $1 WHERE id = 1', [platformProfit]);
-    } else if (platformProfit < 0) {
-      await client.query('UPDATE platform SET hp = GREATEST(0, hp + $1) WHERE id = 1', [platformProfit]);
-    }
-    await client.query('COMMIT'); 
-    const newHp = await getHP(wallet);
-    return { newHp, reward }; 
-  } catch(e) { 
-    await client.query('ROLLBACK'); 
-    throw e; 
-  } finally { 
-    client.release(); 
-  } 
-}
+<!-- LOBBY -->
+<div id="s-lobby" class="screen">
+  <div class="lobby-header">
+    <div>
+      <h2 style="margin:0">Sala de espera</h2>
+      <p style="font-size:11px;color:rgba(255,255,255,.3);margin-top:2px"><span class="online-dot"></span><span id="lbl-online">0</span> jugadores en línea</p>
+    </div>
+    <div class="my-badge" style="display:flex;align-items:center;gap:8px">
+      <button class="btn btn-sm" id="btn-cashout-lobby" style="display:none;background:rgba(239,159,39,.15);border-color:rgba(239,159,39,.35);color:#EF9F27;white-space:nowrap" onclick="doCashout()">💰 Cashout</button>
+      <img id="badge-img" src="" alt="" style="display:none">
+      <div><div style="font-size:10px;color:rgba(255,255,255,.4)">Jugando como</div><span id="lbl-myname"></span> · <span id="lbl-myhp" style="color:#5DCAA5;font-weight:600;font-size:11px"></span></div>
+    </div>
+  </div>
+  <div style="margin-bottom:16px">
+    <div style="font-size:11px;color:rgba(255,255,255,.3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em">🏆 Hall de la Fama</div>
+    <div id="leaderboard-podium" style="display:flex;justify-content:space-between;gap:8px">
+      <div style="flex:1;color:rgba(255,255,255,.3);text-align:center;font-size:11px;padding:20px 0">Gana batallas reales para aparecer aquí</div>
+    </div>
+  </div>
+  
+  <div class="lobby-zone">
+    <div style="background:linear-gradient(135deg,rgba(246,226,102,.18),rgba(245,166,35,.18));border:0.5px solid rgba(246,226,102,.4);border-radius:12px;padding:14px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <div>
+        <div style="font-size:14px;font-weight:600;color:#F6E265">🏆 Torneo (4 Jugadores)</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:2px">Entra con 100 HP. ¡El ganador se lleva 250 HP!</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button class="btn btn-sm btn-pulse" style="background:rgba(246,226,102,.2);border-color:rgba(246,226,102,.4);color:#F6E265;white-space:nowrap" onclick="openTournamentMenu('HP')">🏆 Torneo HP</button>
+        <button class="btn btn-sm" style="background:rgba(130,80,180,.15);border-color:rgba(130,80,180,.35);color:#CFA9EC;white-space:nowrap" onclick="openTournamentMenu('XP')">🤝 Torneo XP</button>
+      </div>
+    </div>
 
-async function getTotalPlayersHP() {
-  const res = await pool.query('SELECT COALESCE(SUM(hp), 0) as total_hp, COALESCE(SUM(locked_hp), 0) as total_locked FROM players');
-  const totalHp = res.rows.length > 0 ? parseInt(res.rows[0].total_hp, 10) : 0;
-  const totalLocked = res.rows.length > 0 ? parseInt(res.rows[0].total_locked, 10) : 0;
-  return totalHp + totalLocked;
-}
+    <div id="low-hp-warning" style="display:none;margin-bottom:12px">
+      <div id="lobby-deposit-widget"></div>
+    </div>
+    <div style="background:linear-gradient(135deg,rgba(120,40,200,.18),rgba(60,20,120,.18));border:0.5px solid rgba(160,80,255,.3);border-radius:12px;padding:14px 16px;margin-bottom:0;">
+      <div style="margin-bottom:10px">
+        <div style="font-size:14px;font-weight:600;color:#CFA9EC">⚔ Zodiac Master</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:4px;line-height:1.4">
+          🤝 <strong>Entrenar:</strong> Practica en 1v1, 3v3 o en la Torre sin arriesgar HP. Gana XP.<br>
+          🏰 <strong>Torre de Batalla:</strong> Invierte 100 HP para ganar 1000 HP (si eres el primero hoy), o intenta el Bono Diario gratis de 10 HP.
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button class="btn btn-sm" style="background:rgba(93,202,165,.15);border-color:rgba(93,202,165,.35);color:#5DCAA5;white-space:nowrap" onclick="openMasterMenu()">🤝 Entrenar (XP)</button>
+        <button class="btn btn-sm" id="btn-gauntlet" style="background:rgba(246,226,102,.15);border-color:rgba(246,226,102,.35);color:#F6E265;white-space:nowrap;display:none" onclick="openTowerMenu()">🏰 Torre</button>
+      </div>
+    </div>
+  </div>
 
-async function getExcedente() {
-  return cachedExcedente; // FIX: Devuelve el valor en caché
-}
+  <div style="font-size:11px;color:rgba(255,255,255,.3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em">Jugadores en sala</div>
+  <div id="guest-lobby-banner" style="display:none;background:linear-gradient(135deg,rgba(246,226,102,.15),rgba(245,166,35,.15));border:0.5px solid rgba(246,226,102,.4);border-radius:12px;padding:14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+    <div>
+      <div style="font-size:14px;font-weight:600;color:#F6E265">🔥 ¡Conecta tu Wallet!</div>
+      <div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:2px">Los invitados solo pueden ganar XP. Conecta Phantom para batallar por HP.</div>
+    </div>
+    <button class="btn btn-sm" style="background:rgba(246,226,102,.2);border-color:rgba(246,226,102,.4);color:#F6E265;white-space:nowrap" onclick="connectPhantom()">👻 Conectar</button>
+  </div>
+  <div class="lobby-list" id="players-list"></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+    <button class="btn btn-sm" onclick="show('s-profile')">👤 Mi Perfil</button>
+    <button class="btn btn-sm btn-red" onclick="disconnectWallet()">🚪 Desconectar Wallet</button>
+  </div>
+  <div class="chat-wrap">
+    <h2 style="margin:0 0 10px 0;font-size:16px">Chat del Lobby</h2>
+    <div class="chat-box" id="chat-box"><div class="chat-empty">Sé el primero en escribir un mensaje...</div></div>
+    <div style="display:flex;gap:8px">
+      <input id="chat-input" class="chat-input" placeholder="Escribe un mensaje..." maxlength="200" onkeydown="if(event.key==='Enter')sendChatMessage()">
+      <button class="btn btn-blue" onclick="sendChatMessage()">Enviar</button>
+    </div>
+  </div>
+</div>
 
-async function getTowerStatus() {
-  const excedente = cachedExcedente;
-  return {
-    grandAvailable: excedente >= 2000,
-    trainAvailable: excedente >= 10,
-    excedente: excedente
-  };
-}
+<!-- TEAM SELECTION -->
+<div id="s-team-select" class="screen">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+    <h1 style="margin:0">Preparación de Equipo</h1>
+    <button class="btn btn-sm" onclick="cancelTeamSelection()">⬅ Cancelar</button>
+  </div>
+  <div style="background:rgba(74,158,255,.06);border:0.5px solid rgba(74,158,255,.2);border-radius:10px;padding:12px;margin-bottom:16px;text-align:center">
+    <div id="ts-mode-title" style="font-size:18px;color:#85B7EB;font-weight:700">Modo: 1v1</div>
+    <div style="font-size:12px;color:rgba(255,255,255,.4);margin-top:4px">Selecciona tu Vicamon inicial</div>
+  </div>
+  <div class="beast-grid" id="team-pick-grid"></div>
+  <div class="beast-detail" id="team-detail-panel"></div>
+  <div style="margin-top:20px">
+    <button class="btn btn-blue btn-lg" id="btn-confirm-team" disabled onclick="confirmTeam()" style="width:100%">¡Listo para pelear! ⚔️</button>
+  </div>
+</div>
 
-async function claimTowerGrandPrize(wallet) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const platRes = await client.query('SELECT hp FROM platform WHERE id = 1 FOR UPDATE');
-    const playersRes = await client.query('SELECT COALESCE(SUM(hp), 0) as total_hp, COALESCE(SUM(locked_hp), 0) as total_locked FROM players');
-    const playersHp = parseInt(playersRes.rows[0].total_hp, 10) + parseInt(playersRes.rows[0].total_locked, 10);
-    const excedente = platRes.rows[0].hp - playersHp;
+<!-- BATTLE -->
+<div id="s-battle" class="screen">
+  <div class="arena-wrap">
+    <img class="arena-bg" src="Arena.png" alt="Arena">
+    <div class="battle-ui">
+      <div style="display:flex;justify-content:flex-end;padding:0 4px 8px"><button class="btn btn-sm btn-red" onclick="surrender()">🏳️ Rendirse</button></div>
+      <div class="turn-bar" id="turn-bar"> </div>
+      <div class="fighters">
+        <div class="fighter" id="f-me"></div>
+        <div class="vs-col"><div class="vs-txt">VS</div><div class="turn-orb" id="turn-orb" style="display:none"></div></div>
+        <div class="fighter enemy" id="f-opp"></div>
+      </div>
+      <div class="atk-grid" id="atk-grid"></div>
+      <div class="log-box" id="log-box"></div>
+    </div>
+  </div>
+</div>
 
-    if (excedente < 2000) {
-      await client.query('ROLLBACK');
-      return false; 
-    }
-    
-    await client.query('UPDATE players SET locked_hp = GREATEST(0, locked_hp - 100), hp = hp + 1000 WHERE wallet = $1', [wallet]);
-    await client.query('UPDATE platform SET hp = hp - 900 WHERE id = 1');
-    
-    await client.query('COMMIT');
-    updateCachedExcedente(); // Actualizar caché
-    return true;
-  } catch(e) {
-    await client.query('ROLLBACK');
-    return false;
-  } finally {
-    client.release();
-  }
-}
+<!-- TOURNAMENT MODE -->
+<div id="s-tournament" class="screen">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <h1 style="margin:0">🏆 Modo Torneo (4 Jugadores)</h1>
+    <button class="btn btn-sm btn-red" onclick="leaveTournament()">🚪 Salir</button>
+  </div>
+  
+  <div style="background:rgba(246,226,102,.1);border:0.5px solid rgba(246,226,102,.3);border-radius:12px;padding:16px;margin-bottom:20px;text-align:center">
+    <div id="tour-mode" style="font-size:16px;font-weight:700;color:#F6E265">Torneo HP (100 HP)</div>
+    <div style="font-size:14px;color:rgba(255,255,255,.6);margin-top:4px">Pozo Acumulado: <span id="tour-pot" style="color:#5DCAA5;font-weight:700">0 HP</span> / 400 HP</div>
+  </div>
 
-async function checkTowerTrainingWin(wallet) {
-  const res = await pool.query('SELECT tower_train_date FROM players WHERE wallet = $1', [wallet]);
-  if (res.rows.length > 0) {
-    const today = new Date().toISOString().split('T')[0];
-    return res.rows[0].tower_train_date === today;
-  }
-  return false;
-}
+  <div class="bracket-container" style="display:flex;justify-content:space-around;align-items:center;gap:10px;padding:20px 10px;background:rgba(0,0,0,.2);border-radius:12px">
+    <div style="display:flex;flex-direction:column;justify-content:space-around;height:350px;width:30%">
+      <div id="tour-slot-1" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:12px;text-align:center;min-height:50px;display:flex;align-items:center;justify-content:center;margin-bottom:20px"><span style="color:rgba(255,255,255,.3)">Esperando J1...</span></div>
+      <div id="tour-slot-2" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:12px;text-align:center;min-height:50px;display:flex;align-items:center;justify-content:center"><span style="color:rgba(255,255,255,.3)">Esperando J2...</span></div>
+      <div id="tour-slot-3" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:12px;text-align:center;min-height:50px;display:flex;align-items:center;justify-content:center;margin-top:20px;margin-bottom:20px"><span style="color:rgba(255,255,255,.3)">Esperando J3...</span></div>
+      <div id="tour-slot-4" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:12px;text-align:center;min-height:50px;display:flex;align-items:center;justify-content:center"><span style="color:rgba(255,255,255,.3)">Esperando J4...</span></div>
+    </div>
+    <div style="display:flex;flex-direction:column;justify-content:center;height:350px;width:30%">
+      <div id="tour-slot-w1" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:12px;text-align:center;min-height:50px;display:flex;align-items:center;justify-content:center;margin-bottom:40px"><span style="color:rgba(255,255,255,.3)">Ganador SF1</span></div>
+      <div id="tour-slot-w2" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:12px;text-align:center;min-height:50px;display:flex;align-items:center;justify-content:center"><span style="color:rgba(255,255,255,.3)">Ganador SF2</span></div>
+    </div>
+    <div style="display:flex;flex-direction:column;justify-content:center;height:350px;width:30%">
+      <div id="tour-slot-champ" style="background:rgba(246,226,102,.1);border:2px solid rgba(246,226,102,.5);border-radius:8px;padding:12px;text-align:center;min-height:80px;display:flex;align-items:center;justify-content:center;flex-direction:column"><span style="color:rgba(246,226,102,.5);font-weight:700;font-size:24px">🏆</span><span style="color:rgba(246,226,102,.5);font-size:11px;margin-top:5px">Esperando Campeón</span></div>
+    </div>
+  </div>
 
-async function claimTowerTrainingWin(wallet) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const res = await client.query('SELECT tower_train_date, hp FROM players WHERE wallet = $1 FOR UPDATE', [wallet]);
-    if (res.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return false;
-    }
-    const today = new Date().toISOString().split('T')[0];
-    if (res.rows[0].tower_train_date === today) {
-      await client.query('ROLLBACK');
-      return false;
-    }
-    
-    const platRes = await client.query('SELECT hp FROM platform WHERE id = 1 FOR UPDATE');
-    const playersRes = await client.query('SELECT COALESCE(SUM(hp), 0) as total_hp, COALESCE(SUM(locked_hp), 0) as total_locked FROM players');
-    const playersHp = parseInt(playersRes.rows[0].total_hp, 10) + parseInt(playersRes.rows[0].total_locked, 10);
-    const excedente = platRes.rows[0].hp - playersHp;
+  <div id="tour-status" style="text-align:center;margin-top:20px;font-size:14px;color:#5DCAA5;font-weight:600">Esperando a que los jugadores se inscriban...</div>
+  <div style="text-align:center;margin-top:20px">
+    <button class="btn btn-blue btn-lg" onclick="joinTournament()" style="width:100%;background:rgba(246,226,102,.15);border-color:rgba(246,226,102,.35);color:#F6E265">✅ Inscribirse (100 HP)</button>
+  </div>
+</div>
 
-    if (excedente < 10) {
-      await client.query('ROLLBACK');
-      return false;
-    }
+<!-- RESULT -->
+<div id="s-result" class="screen">
+  <div style="position:relative;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px">
+    <img style="position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;opacity:.2;z-index:0" src="Arena.png" alt="">
+    <div class="result-wrap" style="position:relative;z-index:1;width:100%;max-width:400px" id="result-box"></div>
+  </div>
+</div>
 
-    await client.query('UPDATE players SET hp = hp + 10, tower_train_date = $1 WHERE wallet = $2', [today, wallet]);
-    await client.query('UPDATE platform SET hp = hp - 10 WHERE id = 1');
-    await client.query('COMMIT');
-    updateCachedExcedente(); // Actualizar caché
-    const newHp = res.rows[0].hp + 10;
-    return { ok: true, newHp };
-  } catch(e) {
-    await client.query('ROLLBACK');
-    return false;
-  } finally {
-    client.release();
-  }
-}
+<!-- MODALS -->
+<div class="modal-bg hidden" id="modal-challenged">
+  <div class="modal">
+    <img id="ch-img" src="" alt="">
+    <h3 id="ch-title"></h3>
+    <p id="ch-sub"></p>
+    <div class="modal-btns">
+      <button class="btn btn-red btn-sm" onclick="rejectChallenge()">Rechazar</button>
+      <button class="btn btn-blue btn-sm" onclick="acceptChallenge()">¡Aceptar!</button>
+    </div>
+  </div>
+</div>
 
-async function checkOwnerWithdrawal() {
-  if (cachedExcedente >= 4000) {
-    return { shouldWithdraw: true, amountUsdc: 1.0, hpToClear: 1000 };
-  }
-  return { shouldWithdraw: false };
-}
+<div class="modal-bg hidden" id="modal-gauntlet">
+  <div class="modal" style="max-width:450px">
+    <h3 id="g-title" style="color:#F6E265"></h3>
+    <p id="g-sub" style="font-size:13px;margin-bottom:15px"></p>
+    <div id="g-beast-picker" style="display:grid;grid-template-columns:repeat(4, 1fr);gap:8px;margin-bottom:20px;max-height:300px;overflow-y:auto"></div>
+    <button class="btn btn-blue" style="width:100%" onclick="continueGauntlet()">Continuar al siguiente Jefe →</button>
+  </div>
+</div>
 
-async function setPlatformHp(hp) { 
-  await pool.query('UPDATE platform SET hp = $1 WHERE id = 1', [hp]); 
-  updateCachedExcedente();
-}
+<div class="modal-bg hidden" id="modal-challenge-mode"></div>
 
-async function addPlatformHp(hp) {
-  await pool.query('UPDATE platform SET hp = hp + $1 WHERE id = 1', [hp]);
-  updateCachedExcedente();
-}
+<div class="modal-bg hidden" id="modal-master-menu">
+  <div class="modal" style="max-width:350px">
+    <h3>🤝 Entrenamiento (XP)</h3>
+    <p style="font-size:12px;color:rgba(255,255,255,.5);margin-bottom:20px">Practica contra la IA sin arriesgar HP.</p>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="btn btn-blue" style="width:100%" onclick="selectChallengeMode('train')">⚔️ Entrenar 1 vs 1</button>
+      <button class="btn btn-blue" style="width:100%" onclick="selectChallengeMode('train3v3')">⚔️ Entrenar 3 vs 3</button>
+      <button class="btn btn-blue" style="width:100%;background:rgba(130,80,180,.15);border-color:rgba(130,80,180,.35);color:#CFA9EC" onclick="challengeGauntlet('guest')">🏰 Torre (XP)</button>
+    </div>
+    <button class="btn btn-sm btn-red" style="margin-top:20px;width:100%" onclick="document.getElementById('modal-master-menu').classList.add('hidden')">Cancelar</button>
+  </div>
+</div>
 
-async function cashout(wallet) { const client = await pool.connect(); try { await client.query('BEGIN'); const res = await client.query('SELECT hp FROM players WHERE wallet = $1 FOR UPDATE', [wallet]); const hp = res.rows.length > 0 ? res.rows[0].hp : 0; if (hp <= 0) { await client.query('ROLLBACK'); return { ok: false, reason: 'no_hp', hp: 0, usdc: 0 }; } await client.query('UPDATE players SET hp = 0 WHERE wallet = $1', [wallet]); await client.query('COMMIT'); updateCachedExcedente(); return { ok: true, hp, usdc: parseFloat((hp * USDC_PER_HP).toFixed(6)) }; } catch(e) { await client.query('ROLLBACK'); return { ok: false, reason: 'db_error', hp: 0, usdc: 0 }; } finally { client.release(); } }
-async function getPlatformHp() { const res = await pool.query('SELECT hp FROM platform WHERE id = 1'); return res.rows.length > 0 ? res.rows[0].hp : 0; }
-async function getPlatformUsdc() { return parseFloat(((await getPlatformHp()) * USDC_PER_HP).toFixed(6)); }
-async function clearPlatformHp(hp) { await pool.query('UPDATE platform SET hp = GREATEST(0, hp - $1) WHERE id = 1', [hp]); updateCachedExcedente(); }
+<div class="modal-bg hidden" id="modal-tower-menu">
+  <div class="modal" style="max-width:350px">
+    <h3>🏰 Torre de Batalla</h3>
+    <p style="font-size:12px;color:rgba(255,255,255,.5);margin-bottom:20px">Enfréntate a 12 Jefes Zodiaco. Elige tu modo:</p>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="btn btn-blue" id="btn-tower-hp" style="width:100%;display:none" onclick="challengeGauntlet('hp')"></button>
+      <button class="btn btn-sm" id="btn-tower-train" style="width:100%;background:rgba(93,202,165,.15);border-color:rgba(93,202,165,.35);color:#5DCAA5;display:none" onclick="challengeGauntlet('training')"></button>
+      <button class="btn btn-sm" id="btn-tower-guest" style="width:100%;background:rgba(246,226,102,.15);border-color:rgba(246,226,102,.35);color:#F6E265;display:none" onclick="challengeGauntlet('guest')">🎮 Torre Invitado (Gratis)</button>
+    </div>
+    <button class="btn btn-sm btn-red" style="margin-top:20px;width:100%" onclick="document.getElementById('modal-tower-menu').classList.add('hidden')">Cancelar</button>
+  </div>
+</div>
 
-// FUNCIONES PARA CONTENT MANAGER
-async function getAllAttacksDB() { const res = await pool.query('SELECT * FROM attacks'); return res.rows; }
-async function getAllVicamonsDB() { const res = await pool.query('SELECT * FROM vicamons'); return res.rows; }
-async function saveAttackDB(data) { 
-  await pool.query(`INSERT INTO attacks (id, name, d, acc, fx, pp, description, type, cost) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO UPDATE SET name=$2, d=$3, acc=$4, fx=$5, pp=$6, description=$7, type=$8, cost=$9`, 
-  [data.id, data.name, data.d, data.acc, data.fx, data.pp, data.desc, data.type, data.cost]); 
-}
-async function saveVicamonDB(data) { 
-  await pool.query(`INSERT INTO vicamons (id, name, sub, img, el, style, cat, stats, attacks) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO UPDATE SET name=$2, sub=$3, img=$4, el=$5, style=$6, cat=$7, stats=$8, attacks=$9`, 
-  [data.id, data.name, data.sub, data.img, data.el, data.style, data.cat, JSON.stringify(data.stats), JSON.stringify(data.attacks)]); 
-}
+<div class="modal-bg hidden" id="modal-qr-scanner">
+  <div class="modal" style="max-width:400px">
+    <h3 style="margin-bottom:15px">📷 Escanear QR</h3>
+    <div id="qr-reader" style="width: 100%;"></div>
+    <button class="btn btn-red btn-sm" style="margin-top:15px; width:100%" onclick="closeQRScanner()">Cerrar Escáner</button>
+  </div>
+</div>
 
-module.exports = {
-  getHP, addHP, hasHP, lockHP, unlockHP, settleMatch, settleTeamMatch, settleGauntletTiered, cashout,
-  getPlatformHp, getPlatformUsdc, clearPlatformHp, setPlatformHp, addPlatformHp,
-  PLATFORM_WALLET, PLATFORM_THRESHOLD: 1.00, USDC_PER_HP,
-  getAllPlayersDebug, updatePlayerName, updatePlayerStats, getTopPlayers,
-  getPlayerStats, getPlayerRank,
-  isTxProcessed, markTxProcessed,
-  adminSetHP, adminResetPlatform, adminUnlockAllHP,
-  calculateGauntletReward,
-  getTowerStatus, claimTowerGrandPrize, checkTowerTrainingWin, claimTowerTrainingWin,
-  getExcedente, getTotalPlayersHP, checkOwnerWithdrawal,
-  getAllAttacksDB, getAllVicamonsDB, saveAttackDB, saveVicamonDB
-};
+<div class="modal-bg hidden" id="modal-mobile-connect">
+  <div class="modal" style="max-width:400px; text-align:left;">
+    <h3 style="color:#F0997B; margin-bottom:15px; text-align:center;">📱 Jugar con Wallet en Móvil</h3>
+    <p style="font-size:13px; color:rgba(255,255,255,.6); margin-bottom:10px;">Para conectar tu wallet desde el móvil, necesitas abrir este juego dentro de la app de Phantom.</p>
+    <p style="font-size:13px; color:rgba(255,255,255,.6); margin-bottom:15px;"><strong>Pasos:</strong><br>1. Copia el enlace de abajo.<br>2. Abre la app de <strong>Phantom</strong>.<br>3. Ve a <strong>"Descubrir" (🔍)</strong> y pega el enlace.</p>
+    <div style="background:rgba(0,0,0,.3); padding:10px; margin-bottom:20px; border-radius:8px; word-break:break-all; font-family:monospace; font-size:11px; color:#85B7EB; cursor:pointer; display:flex; justify-content:space-between; align-items:center" onclick="copyText(window.location.href)">
+      <span id="mobile-url-display"></span> <span style="margin-left:8px; white-space:nowrap; font-size:14px">📋</span>
+    </div>
+    <button class="btn btn-blue" style="width:100%; margin-bottom:10px; padding:12px" onclick="openPhantomApp()">🚀 Intentar abrir en Phantom automáticamente</button>
+    <button class="btn btn-sm btn-red" style="width:100%" onclick="closeMobileConnectModal()">Cancelar</button>
+  </div>
+</div>
+
+<!-- SCRIPTS -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="beasts.js"></script>
+<script src="audio.js"></script>
+<script src="wallet.js"></script>
+<script src="ui.js"></script>
+<script src="lab.js"></script>
+<script src="tournament.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
