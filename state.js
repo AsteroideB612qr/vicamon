@@ -1,67 +1,73 @@
-const { getHP } = require('./hp-balance');
+const BEASTS = global.BEASTS_DB || require('./beasts.js');
+const { getStartState, applyAtk, tickEffects } = require('./battleEngine');
+const { cpuPickAttack } = require('./cpuAI');
 
-// Memoria central del juego
-const lobby = new Map();      
-const battles = new Map();    
-const processedTx = new Set();
-const walletToBattle = new Map(); 
-const activePhysicalCodes = new Map(); // NUEVO: codigo -> id del jugador que lo tiene activo
-let nextId = 1;
-
-function uid() { return nextId++; }
-
-function send(ws, obj) {
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
-}
-
-function broadcast(obj) {
-  lobby.forEach(p => send(p.ws, obj));
-}
-
-async function lobbyList() {
-  const list = [];
-  for (const [id, p] of lobby) {
-    if (!p.inBattle) {
-      const hp = p.isGuest ? 0 : await getHP(p.wallet);
-      list.push({ id, name: p.name, beast: p.beast, hp, isGuest: p.isGuest || false, physicalBeasts: p.physicalBeasts || [] });
+function simulateBattle(b1Key, b2Key) {
+    let st1 = getStartState(b1Key);
+    let st2 = getStartState(b2Key);
+    
+    let attacker = 1; // 1 para st1, 2 para st2
+    let turn = 0;
+    
+    while (turn < 50) { // Límite de 50 turnos para evitar bucles infinitos
+        turn++;
+        let aSt = attacker === 1 ? st1 : st2;
+        let dSt = attacker === 1 ? st2 : st1;
+        let bKey = attacker === 1 ? b1Key : b2Key;
+        
+        // Aplicar efectos de turno (veneno, quemadura, etc)
+        tickEffects(aSt, "Bot");
+        if (aSt.hp <= 0) return attacker === 1 ? 2 : 1; // Gana el defensor
+        
+        // Lógica de ataque
+        if (aSt.stun) { 
+            aSt.stun = false; 
+        } else if (aSt.recharge > 0) { 
+            aSt.recharge--; 
+        } else {
+            const idx = cpuPickAttack(aSt, dSt, bKey);
+            const atk = BEASTS[bKey].attacks[idx];
+            if (aSt.pp[idx] < 99) aSt.pp[idx]--;
+            applyAtk(aSt, dSt, atk, "Bot1", "Bot2");
+            
+            if (dSt.hp <= 0) return attacker; // Gana el atacante
+        }
+        
+        attacker = attacker === 1 ? 2 : 1; // Cambio de turno
     }
-  }
-  return list;
+    return 0; // Empate por límite de turnos
 }
 
-async function pushLobby() {
-  broadcast({ type: 'lobby', players: await lobbyList() });
+async function runMetaSimulation() {
+    const keys = Object.keys(BEASTS);
+    const stats = {};
+    keys.forEach(k => stats[k] = { wins: 0, losses: 0, draws: 0 });
+
+    // Todos contra todos (Round Robin)
+    for (let i = 0; i < keys.length; i++) {
+        for (let j = i + 1; j < keys.length; j++) {
+            // Batalla 1: i vs j
+            let winner = simulateBattle(keys[i], keys[j]);
+            if (winner === 1) { stats[keys[i]].wins++; stats[keys[j]].losses++; }
+            else if (winner === 2) { stats[keys[j]].wins++; stats[keys[i]].losses++; }
+            else { stats[keys[i]].draws++; stats[keys[j]].draws++; }
+            
+            // Batalla 2: j vs i (Para ser justos con quién ataca primero)
+            winner = simulateBattle(keys[j], keys[i]);
+            if (winner === 1) { stats[keys[j]].wins++; stats[keys[i]].losses++; }
+            else if (winner === 2) { stats[keys[i]].wins++; stats[keys[j]].losses++; }
+            else { stats[keys[i]].draws++; stats[keys[j]].draws++; }
+        }
+    }
+    
+    // Calcular Win Rate y ordenar
+    const results = Object.entries(stats).map(([key, s]) => {
+        const total = s.wins + s.losses + s.draws;
+        const winRate = total > 0 ? ((s.wins / total) * 100).toFixed(1) : 0;
+        return { key, name: BEASTS[key].name, wins: s.wins, losses: s.losses, draws: s.draws, winRate: parseFloat(winRate) };
+    }).sort((a, b) => b.winRate - a.winRate);
+
+    return results;
 }
 
-function pushBattle(bId) {
-  const b = battles.get(bId); if (!b) return;
-  const p1 = lobby.get(b.p1id), p2 = lobby.get(b.p2id);
-  if (!p1 || !p2) return;
-  const base = {
-    type: 'battle_state', battleId: bId,
-    p1: { name: p1.name, beast: p1.beast, state: b.st1 },
-    p2: { name: p2.name, beast: p2.beast, state: b.st2 },
-    logs: b.logs.slice(-14)
-  };
-  send(p1.ws, { ...base, yourTurn: b.turnId === b.p1id });
-  send(p2.ws, { ...base, yourTurn: b.turnId === b.p2id });
-}
-
-function pushCpuBattle(bId) {
-  const b = battles.get(bId); if (!b) return;
-  const pl = lobby.get(b.cpuIsP1 ? b.p2id : b.p1id); if (!pl) return;
-  const cpuSide = { name: 'Zodiac Master', beast: b.cpuBeast, state: b.cpuIsP1 ? b.st1 : b.st2 };
-  const plSide = { name: pl.name, beast: pl.beast, state: b.cpuIsP1 ? b.st2 : b.st1 };
-  send(pl.ws, {
-    type: 'battle_state', battleId: bId,
-    p1: b.cpuIsP1 ? cpuSide : plSide,
-    p2: b.cpuIsP1 ? plSide : cpuSide,
-    logs: b.logs.slice(-14),
-    yourTurn: b.turnId !== -1
-  });
-}
-
-module.exports = {
-  lobby, battles, processedTx, walletToBattle, activePhysicalCodes, uid,
-  send, broadcast, pushLobby, pushBattle, pushCpuBattle
-};
+module.exports = { runMetaSimulation };

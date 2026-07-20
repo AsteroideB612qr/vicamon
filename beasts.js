@@ -1,107 +1,260 @@
-const BEASTS = {
-  aries:      {name:'Aries',      cat:'Zodiaco', sub:'Carnero de Fuego',    img:'Aries.png',      el:'fuego', style:'agresivo',
-    attacks:[
-      {n:'Embestida ardiente',  d:28, acc:72,  self:8,  fx:null,       pierce:true,  pp:5, desc:'Golpe poderoso que ignora escudos. Te cuesta 8 HP al lanzarlo.'},
-      {n:'Cornada solar',       d:18, acc:100, self:0,  fx:null,                     pp:99, desc:'Ataque directo y confiable. Nunca falla. PP infinito.'},
-      {n:'Furia del carnero',   d:40, acc:55,  self:15, fx:null,       risk:true,    pp:3, desc:'Golpe devastador. Si falla, pierdes 15 HP. Alto riesgo.'},
-      {n:'Carga cegadora',      d:15, acc:85,  self:0,  fx:'blind',    debuff:true,  pp:4, desc:'Ciega al rival 2 turnos. Sus ataques tienen 30% menos de precisión.'},
-    ]},
-  tauro:      {name:'Tauro',      cat:'Zodiaco', sub:'Toro de Piedra',      img:'Tauro.png',      el:'tierra',style:'defensivo',
-    attacks:[
-      {n:'Muro de obsidiana',   d:0,  acc:100, self:0,  fx:'shield2',  buff:true,    pp:3, desc:'Crea un escudo que dura 2 turnos. Bloquea ataques directos.'},
-      {n:'Pisotón sísmico',     d:18, acc:88,  self:0,  fx:'slow',     debuff:true,  pp:5, desc:'Golpe que ralentiza al rival, reduciendo su precisión 1 turno.'},
-      {n:'Coraza telúrica',     d:0,  acc:100, self:0,  fx:'heal20',   buff:true,    pp:3, desc:'Se cura 20 HP. Ideal para recuperarse antes de contraatacar.'},
-      {n:'Cornada de granito',  d:29, acc:65,  self:0,  fx:null,                     pp:99, desc:'Golpe lento pero brutal. Baja precisión, daño muy alto.'},
-    ]},
-  geminis:    {name:'Géminis',    cat:'Zodiaco', sub:'Gemelos del Viento',  img:'Geminis.png',    el:'aire',  style:'caos',
-    attacks:[
-      {n:'Ataque doble',        d:12, acc:90,  self:0,  fx:'double',                 pp:5, desc:'Dos cabezas atacan a la vez. Golpea dos veces seguidas de 12 HP cada una.'},
-      {n:'Cambio de personalidad',d:0,acc:100, self:0,  fx:'swap',     buff:true,    pp:3, desc:'Intercambia tus estados negativos con los del rival.'},
-      {n:'Viento confuso',      d:16, acc:100, self:0,  fx:'blind',    debuff:true,  pp:4, desc:'Ciega al rival 2 turnos. Sus ataques tienen 30% menos de precisión.'},
-      {n:'Caos gemelar',        d:0,  acc:95,  self:0,  fx:'chaos',                  pp:99, desc:'Daño completamente aleatorio entre 5 y 40 HP. Impredecible por diseño.'},
-    ]},
-  cancer:     {name:'Cáncer',     cat:'Zodiaco', sub:'Cangrejo Abismal',    img:'Cancer.png',     el:'agua',  style:'defensivo',
-    attacks:[
-      {n:'Caparazón lunar',     d:0,  acc:100, self:0,  fx:'shield1r', buff:true,    pp:2, desc:'Escudo 1 turno que refleja 15 HP al atacante cuando lo golpean.'},
-      {n:'Pinza drenante',      d:13, acc:100, self:0,  fx:'drain10',                pp:5, desc:'Ataca y roba 10 HP al rival. Ese HP se suma a tu vida.'},
-      {n:'Corriente fría',      d:18, acc:85,  self:0,  fx:'slow2',    debuff:true,  pp:4, desc:'Ralentiza al rival 2 turnos completos reduciendo su precisión.'},
-      {n:'Marea nocturna',      d:24, acc:70,  self:0,  fx:'shieldbonus',            pp:99, desc:'Más poderoso si el rival tiene escudo activo (+10 HP daño extra).'},
-    ]},
-  leo:        {name:'Leo',        cat:'Zodiaco', sub:'León Estelar',        img:'Leo.png',        el:'fuego', style:'equilibrado',
-    attacks:[
-      {n:'Rugido solar',        d:0,  acc:100, self:0,  fx:'weaken',   debuff:true,  pp:4, desc:'Debilita al rival 2 turnos. Sus ataques hacen 25% menos de daño.'},
-      {n:'Zarpazo estelar',     d:26, acc:88,  self:0,  fx:'weakbonus',              pp:5, desc:'Hace +10 HP extra si el rival está debilitado. Úsalo después del Rugido.'},
-      {n:'Melena de fuego',     d:18, acc:100, self:0,  fx:'burn',     dot:true,     pp:4, desc:'Ataque seguro que quema al rival: 6 HP de daño por turno durante 2 turnos.'},
-      {n:'Rugido del rey',      d:38, acc:65,  self:0,  fx:null,                     pp:99, desc:'Golpe masivo. Ignora todos los debuffs propios al calcularse.'},
-    ]},
-  virgo:      {name:'Virgo',      cat:'Zodiaco', sub:'Doncella de Cristal', img:'Virgo.png',      el:'tierra',style:'tactico',
-    attacks:[
-      {n:'Análisis de debilidad',d:0, acc:100, self:0,  fx:'analyze',  buff:true,    pp:3, desc:'Analiza al rival. Tus próximos 3 ataques hacen 15% más de daño.'},
-      {n:'Fragmento cortante',  d:26, acc:88,  self:0,  fx:null,       pierce:true,  pp:5, desc:'Corte preciso que ignora escudos. Pasa a través de cualquier defensa.'},
-      {n:'Purificación',        d:0,  acc:100, self:0,  fx:'purify',   buff:true,    pp:3, desc:'Elimina todos tus estados negativos y cura 15 HP.'},
-      {n:'Prisma fatal',        d:37, acc:70,  self:0,  fx:'stateBonus',             pp:99, desc:'+10 HP extra si el rival tiene cualquier estado activo (veneno, stun, etc.).'},
-    ]},
-  libra:      {name:'Libra',      cat:'Zodiaco', sub:'Balanza de Acero',    img:'Libra.png',      el:'aire',  style:'tactico',
-    attacks:[
-      {n:'Equilibrio fatal',    d:0,  acc:100, self:0,  fx:'equalize',               pp:4, desc:'El daño es exactamente la diferencia de HP entre tú y el rival.'},
-      {n:'Contrapeso',          d:0,  acc:100, self:0,  fx:'counter',  buff:true,    pp:3, desc:'Recupera exactamente el daño que recibiste en el turno anterior.'},
-      {n:'Filo de justicia',    d:28, acc:85,  self:0,  fx:'lowHPbonus',             pp:5, desc:'+10 HP de daño extra si tu HP actual es menor que el del rival.'},
-      {n:'Sentencia',           d:33, acc:75,  self:0,  fx:'stun_ifless',            pp:99, desc:'Aturde al rival si en este momento tiene más HP que tú.'},
-    ]},
-  escorpio:   {name:'Escorpio',   cat:'Zodiaco', sub:'Escorpión Abismal',   img:'Escorpio.png',   el:'agua',  style:'veneno',
-    attacks:[
-      {n:'Picadura mortal',     d:6,  acc:100, self:0,  fx:'poison5',  dot:true,     pp:4, desc:'Envenena al rival: 8 HP de daño por turno durante 5 turnos.'},
-      {n:'Cola abismal',        d:22, acc:85,  self:0,  fx:'poisonBonus',            pp:5, desc:'+5 HP por cada turno de veneno activo que tenga el rival al golpear.'},
-      {n:'Toxina corrosiva',    d:10, acc:100, self:0,  fx:'corrode',  debuff:true,  pp:3, desc:'El veneno del rival ya no puede ser curado ni limpiado por 3 turnos.'},
-      {n:'Aguijón final',       d:35, acc:65,  self:0,  fx:'poisonDouble',           pp:99, desc:'Si el rival está envenenado, este ataque hace el doble de daño (70 HP).'},
-    ]},
-  sagitario:  {name:'Sagitario',  cat:'Zodiaco', sub:'Centauro Cósmico',    img:'Sagitario.png',  el:'fuego', style:'equilibrado',
-    attacks:[
-      {n:'Flecha de fuego',     d:34, acc:95,  self:0,  fx:null,                     pp:5, desc:'Flecha precisa y confiable. Casi nunca falla. Tu ataque principal.'},
-      {n:'Disparo cargado',     d:45, acc:70,  self:0,  fx:'recharge',               pp:3, desc:'Gran daño pero debes recargar 1 turno después. Planifica cuándo usarlo.'},
-      {n:'Lluvia de estrellas', d:20, acc:85,  self:0,  fx:'double',                 pp:4, desc:'Dos flechas rápidas de 20 HP cada una. Golpea dos veces seguidas.'},
-      {n:'Flecha del destino',  d:32, acc:75,  self:0,  fx:'random_fx',              pp:99, desc:'Además del daño, aplica un efecto aleatorio: veneno, stun, ceguera o -ataque.'},
-    ]},
-  capricornio:{name:'Capricornio',cat:'Zodiaco', sub:'Coba Titán',          img:'Capricornio.png',el:'tierra',style:'defensivo',
-    attacks:[
-      {n:'Fortaleza alpina',    d:0,  acc:100, self:0,  fx:'fortress', buff:true,    pp:2, desc:'Todo en uno: escudo 2 turnos + cura 15 HP + regenera 6 HP por 2 turnos.'},
-      {n:'Pisotón tectónico',   d:35, acc:80,  self:0,  fx:'weakAtk',  debuff:true,  pp:5, desc:'Golpe que reduce el ataque del rival en 20% durante 2 turnos.'},
-      {n:'Coraza de cumbre',    d:0,  acc:100, self:0,  fx:'reflect50',buff:true,    pp:2, desc:'Refleja: el próximo ataque recibido te daña solo 50% y el resto lo devuelves.'},
-      {n:'Avalancha final',     d:48, acc:70,  self:10, fx:null,       risk:true,    pp:99, desc:'Golpe masivo pero te cuesta 10 HP propios. Baja precisión. Golpe desesperado.'},
-    ]},
-  acuario:    {name:'Acuario',    cat:'Zodiaco', sub:'Portador del Rayo',   img:'Acuario.png',    el:'aire',  style:'caos',
-    attacks:[
-      {n:'Descarga caótica',    d:32, acc:95,  self:0,  fx:null,                     pp:5, desc:'Daño estable y confiable. Tu ataque principal.'},
-      {n:'Tormenta eléctrica',  d:18, acc:100, self:0,  fx:'stun_blind',debuff:true, pp:3, desc:'Garantizado: aturde al rival 1 turno Y le reduce precisión. Doble debuff.'},
-      {n:'Rayo devastador',     d:52, acc:80,  self:0,  fx:null,                     pp:3, desc:'Ataque poderoso y confiable. Alta precisión para su gran daño.'},
-      {n:'Corriente alterna',   d:22, acc:95,  self:0,  fx:'random_fx',              pp:99, desc:'Casi nunca falla y aplica un estado aleatorio al rival además del daño.'},
-    ]},
-  piscis:     {name:'Piscis',     cat:'Zodiaco', sub:'Leviatán Dual',       img:'Piscis.png',     el:'agua',  style:'soporte',
-    attacks:[
-      {n:'Cola del abismo',     d:32, acc:85,  self:0,  fx:'poison3l', dot:true,     pp:5, desc:'Ataque que envena levemente: 3 HP por turno durante 3 turnos.'},
-      {n:'Corriente curativa',  d:0,  acc:100, self:0,  fx:'heal30',   buff:true,    pp:4, desc:'La curación más alta del juego: 30 HP recuperados de golpe.'},
-      {n:'Dualidad oceánica',   d:28, acc:100, self:0,  fx:'selfheal10',buff:true,   pp:4, desc:'Ataca y se cura a la vez: 28 HP de daño al rival + 10 HP de cura propia.'},
-      {n:'Marea del fin',       d:42, acc:70,  self:0,  fx:'lowHPx15',               pp:99, desc:'Si tu HP está por debajo del 30%, este ataque hace 1.5× el daño normal (63 HP).'},
-    ]},
-  irondog:    {name:'Iron Dog',   cat:'Físico',  sub:'Can Cyborg',          img:'IronDog.png',    el:'tierra', style:'equilibrado', stats: {atk:65, def:85, spd:75},
-    attacks:[
-      {n:'Mordida de Titanio',  d:20, acc:100, self:0,  fx:null,                     pp:99, desc:'Colmillos de acero que no fallan. Tu ataque básico y confiable.'},
-      {n:'Sobrecarga Reactor',  d:38, acc:85,  self:8,  fx:null,       risk:true,    pp:4,  desc:'Sobrecarga el núcleo para un golpe devastador. Te inflige 8 HP por el retroceso.'},
-      {n:'Escudo Electromagnético', d:0, acc:100, self:0, fx:'shield1r', buff:true,  pp:3,  desc:'Genera un escudo de 1 turno que refleja 15 HP al atacante.'},
-      {n:'Rastreo Láser',       d:10, acc:100, self:0,  fx:'blind',     debuff:true, pp:4,  desc:'Un rayo láser que daña la visión del rival, cegándolo por 2 turnos.'},
-    ]},
-  tunqui:     {name:'Tunqui',     cat:'Físico',  sub:'Guardián Amazónico',  img:'Tunqui.png',     el:'aire',  style:'caos', stats: {atk:75, def:65, spd:85},
-    attacks:[
-      {n:'Golpe Rápido',        d:15, acc:100, self:0,  fx:'double',                 pp:10, desc:'Golpea dos veces seguidas.'},
-      {n:'Lanzallamas',         d:18, acc:100, self:0,  fx:'burn',      dot:true,    pp:5,  desc:'Daño + Quema al rival (6 HP/turno por 2 turnos).'},
-      {n:'Drenaje',             d:15, acc:100, self:0,  fx:'drain10',                pp:5,  desc:'Daña 15 HP y te cura 10 HP.'},
-      {n:'Escudo',              d:0,  acc:100, self:0,  fx:'shield2',   buff:true,   pp:5,  desc:'Bloquea los próximos 2 ataques.'},
-    ]}
-};
+// FIX: Usar BD en memoria, con beasts.js como respaldo de emergencia
+const BEASTS = global.BEASTS_DB || require('./beasts.js');
+const { 
+  settleMatch, getHP, updatePlayerStats, 
+  getPlayerStats, getPlayerRank, getTopPlayers, 
+  USDC_PER_HP 
+} = require('./hp-balance');
+const { lobby, battles, pushBattle, pushLobby, broadcast, walletToBattle } = require('./state');
 
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = BEASTS;
+function newState() {
+  return { hp:100, maxHp:100, poisonDmg:0, poisonTurns:0, burnDmg:0, burnTurns:0,
+    shield:0, shieldReflect:0, reflect50:0, stun:false, recharge:0,
+    regen:0, regenTurns:0, blind:0, weakAtk:0, weaken:0,
+    corrode:0, analyzed:0, lastDmgReceived:0, pp:[] };
 }
-if (typeof window !== 'undefined') {
-  window.BEASTS = BEASTS;
+
+function getStartState(beastKey) { 
+  const st = newState(); 
+  const beast = BEASTS[beastKey]; 
+  if (beast) { 
+    st.pp = beast.attacks.map(a => a.pp === undefined ? 99 : a.pp); 
+  } else { 
+    st.pp = [99, 99, 99, 99]; 
+  } 
+  return st; 
 }
+
+function applyAtk(aSt, dSt, atk, aName, dName) { 
+  const logs = []; 
+  const blind = aSt.blind > 0 ? 30 : 0; 
+  const weakMul = aSt.weakAtk > 0 ? 0.8 : 1; 
+  const anaMul = aSt.analyzed > 0 ? 1.15 : 1; 
+  const fx = atk.fx;
+  
+  if (fx==='shield2') { aSt.shield=2; aSt.shieldReflect=0; logs.push({t:`${aName} usó ${atk.n}. ¡Se protege con un Escudo ×2!`,c:'good'}); return logs; }
+  if (fx==='shield1r') { aSt.shield=1; aSt.shieldReflect=15; logs.push({t:`${aName} usó ${atk.n}. ¡Escudo Lunar activado!`,c:'good'}); return logs; }
+  if (fx==='reflect50'){ aSt.reflect50=1; logs.push({t:`${aName} usó ${atk.n}. ¡Prepara un Reflejo del 50%!`,c:'good'}); return logs; }
+  if (fx==='heal20') { aSt.hp=Math.min(aSt.maxHp,aSt.hp+20); logs.push({t:`${aName} usó ${atk.n}. ¡Se cura 20 HP!`,c:'good'}); return logs; }
+  if (fx==='heal30') { aSt.hp=Math.min(aSt.maxHp,aSt.hp+30); logs.push({t:`${aName} usó ${atk.n}. ¡Se cura 30 HP!`,c:'good'}); return logs; }
+  if (fx==='fortress') { aSt.shield=2; aSt.hp=Math.min(aSt.maxHp,aSt.hp+15); aSt.regen=6; aSt.regenTurns=2; logs.push({t:`${aName} usó ${atk.n}. ¡Fortaleza activada: Escudo, Cura y Regeneración!`,c:'good'}); return logs; }
+  if (fx==='analyze') { aSt.analyzed=3; logs.push({t:`${aName} usó ${atk.n}. ¡Analiza a ${dName}! (+15% daño)`,c:'good'}); return logs; }
+  if (fx==='purify') { aSt.poisonTurns=aSt.burnTurns=aSt.blind=aSt.weakAtk=aSt.weaken=0; aSt.stun=false; aSt.hp=Math.min(aSt.maxHp,aSt.hp+15); logs.push({t:`${aName} usó ${atk.n}. ¡Se purifica y cura 15 HP!`,c:'good'}); return logs; }
+  if (fx==='weaken') { dSt.weaken=2; logs.push({t:`${aName} usó ${atk.n}. ¡Debilita a ${dName}! (-25% daño)`,c:'special'}); return logs; }
+  if (fx==='counter') { const h=aSt.lastDmgReceived||0; aSt.hp=Math.min(aSt.maxHp,aSt.hp+h); logs.push({t:`${aName} usó ${atk.n}. ¡Contrapeso! Recupera ${h} HP.`,c:'good'}); return logs; }
+  
+  if (fx==='swap') { 
+    const propsToSwap = ['stun', 'poisonDmg', 'poisonTurns', 'burnDmg', 'burnTurns', 'blind', 'weakAtk', 'weaken', 'corrode'];
+    propsToSwap.forEach(prop => {
+      const temp = dSt[prop];
+      dSt[prop] = aSt[prop];
+      aSt[prop] = temp;
+    });
+    logs.push({t:`${aName} usó ${atk.n}. ¡Intercambia estados con ${dName}!`,c:'special'}); 
+    return logs; 
+  }
+
+  if (fx==='equalize') { const diff=Math.abs(aSt.hp-dSt.hp); dSt.hp=Math.max(0,dSt.hp-diff); logs.push({t:`${aName} usó ${atk.n}. ¡Equilibra la vida! Quita ${diff} HP a ${dName}.`,c:'bad'}); return logs; }
+  if (fx==='chaos'||fx==='chaosHi') { 
+    if (Math.random()*100 >= atk.acc-blind) { logs.push({t:`${aName} usó ${atk.n}, pero ¡falló!`,c:'bad'}); return logs; } 
+    const dmg=fx==='chaosHi'?Math.floor(Math.random()*36)+10:Math.floor(Math.random()*36)+5; dSt.hp=Math.max(0,dSt.hp-dmg); 
+    logs.push({t:`${aName} usó ${atk.n}. ¡Caos! Causa ${dmg} HP de daño a ${dName}.`,c:'bad'}); return logs; 
+  }
+  
+  const hit = Math.random()*100 < Math.max(5, atk.acc-blind);
+  if (!hit) { 
+    if (fx==='overload') { aSt.hp=Math.max(0,aSt.hp-25); logs.push({t:`${aName} usó ${atk.n}, pero falló. ¡Sobrecarga fallida! -25 HP.`,c:'bad'}); } 
+    else logs.push({t:`${aName} usó ${atk.n}, pero ¡falló!`,c:'bad'}); 
+    return logs; 
+  }
+  
+  if (atk.d > 0 && !atk.pierce) {
+    if (dSt.shield > 0) { 
+      dSt.shield--; const ref=dSt.shieldReflect||0; 
+      if (ref>0) { aSt.hp=Math.max(0,aSt.hp-ref); logs.push({t:`${aName} usó ${atk.n}, pero el escudo de ${dName} bloqueó el ataque y reflejó ${ref} HP.`,c:'special'}); } 
+      else logs.push({t:`${aName} usó ${atk.n}, pero el escudo de ${dName} bloqueó el ataque.`,c:'special'}); 
+      return logs; 
+    }
+    if (dSt.reflect50 > 0) { 
+      dSt.reflect50=0; const ref=Math.floor(atk.d*0.5); aSt.hp=Math.max(0,aSt.hp-ref); 
+      logs.push({t:`${aName} usó ${atk.n}, pero ${dName} reflejó el 50% del daño. (-${ref} HP)`,c:'special'}); 
+      return logs; 
+    }
+  }
+  
+  let dmg=atk.d;
+  if (fx==='double') dmg=atk.d*2; if (fx==='triple') dmg=atk.d*3;
+  if (fx==='drain10') { dmg=15; aSt.hp=Math.min(aSt.maxHp,aSt.hp+10); }
+  if (fx==='selfheal10') aSt.hp=Math.min(aSt.maxHp,aSt.hp+10);
+  if (fx==='shieldbonus' && dSt.shield>0) dmg+=10;
+  if (fx==='weakbonus' && dSt.weaken>0) dmg+=10;
+  if (fx==='stateBonus' && (dSt.poisonTurns>0||dSt.burnTurns>0||dSt.stun||dSt.blind>0)) dmg+=10;
+  if (fx==='poisonBonus') dmg+=(dSt.poisonTurns||0)*5;
+  if (fx==='poisonDouble'&&dSt.poisonTurns>0) dmg*=2;
+  if (fx==='lowHPbonus' &&aSt.hp<dSt.hp) dmg+=10;
+  if (fx==='lowHPx15' &&aSt.hp<aSt.maxHp*0.3) dmg=Math.floor(dmg*1.5);
+  if (dSt.weaken>0) dmg=Math.floor(dmg*1.25);
+  dmg=Math.floor(dmg*weakMul*anaMul);
+  
+  dSt.hp=Math.max(0,dSt.hp-dmg); dSt.lastDmgReceived=dmg; if (atk.self>0) aSt.hp=Math.max(0,aSt.hp-atk.self);
+  
+  let mainLog = `${aName} usó ${atk.n} y causó ${dmg} HP de daño a ${dName}.`;
+  if (atk.d === 0 && fx !== 'drain10') mainLog = `${aName} usó ${atk.n} en ${dName}.`;
+  
+  let effectLog = '';
+  if (fx==='poison5') { dSt.poisonDmg=8; dSt.poisonTurns=5; effectLog = ` ¡Envenenó a ${dName} por 5 turnos!`; }
+  if (fx==='poison3l') { dSt.poisonDmg=3; dSt.poisonTurns=3; effectLog = ` ¡Envenenó levemente a ${dName}!`; }
+  if (fx==='corrode') { dSt.corrode=3; effectLog = ` ¡El veneno de ${dName} ahora es corrosivo!`; }
+  if (fx==='burn') { dSt.burnDmg=6; dSt.burnTurns=2; effectLog = ` ¡Quemó a ${dName}!`; }
+  if (fx==='stun') { dSt.stun=true; effectLog = ` ¡Aturdió a ${dName}!`; }
+  if (fx==='stun_blind') { dSt.stun=true; dSt.blind=2; effectLog = ` ¡Aturdió y cegó a ${dName}!`; }
+  if (fx==='stun_ifless'&&dSt.hp>aSt.hp) { dSt.stun=true; effectLog = ` ¡Aturdió a ${dName}!`; }
+  if (fx==='slow'||fx==='slow2') { dSt.blind=(fx==='slow2'?2:1); effectLog = ` ¡Cegó a ${dName}!`; }
+  if (fx==='blind') { dSt.blind=2; effectLog = ` ¡Cegó a ${dName}!`; }
+  if (fx==='weakAtk') { dSt.weakAtk=2; effectLog = ` ¡Redució el ataque de ${dName}!`; }
+  if (fx==='recharge') { aSt.recharge=1; effectLog = ` (${aName} debe recargar el próximo turno.)`; }
+  if (fx==='random_fx') { const opts=['poison','stun','blind','weakAtk']; const r=opts[Math.floor(Math.random()*opts.length)]; if(r==='poison'){dSt.poisonDmg=5;dSt.poisonTurns=3;effectLog=' ¡Aplicó Veneno!';} if(r==='stun'){dSt.stun=true;effectLog=' ¡Aplicó Stun!';} if(r==='blind'){dSt.blind=2;effectLog=' ¡Aplicó Ceguera!';} if(r==='weakAtk'){dSt.weakAtk=2;effectLog=' ¡Aplicó Debilidad!';} }
+  
+  const selfNote=atk.self>0?` (-${atk.self} HP propio)`:''; 
+  const healNote=fx==='drain10'?' (drena 10)':fx==='selfheal10'?' (+10 propio)':'';
+  
+  logs.push({t:`${mainLog}${effectLog}${selfNote}${healNote}`,c:dmg>25?'bad':'normal'});
+  return logs;
+}
+
+function tickEffects(st, name) {
+  const logs=[];
+  if (st.poisonTurns>0){ st.hp=Math.max(0,st.hp-st.poisonDmg); st.poisonTurns--; logs.push({t:`${name} sufre ${st.poisonDmg} HP de daño por veneno.`,c:'special'}); }
+  if (st.burnTurns>0) { st.hp=Math.max(0,st.hp-st.burnDmg); st.burnTurns--; logs.push({t:`${name} sufre ${st.burnDmg} HP de daño por quemadura.`,c:'special'}); }
+  if (st.regenTurns>0){ st.hp=Math.min(st.maxHp,st.hp+st.regen); st.regenTurns--; logs.push({t:`${name} regenera ${st.regen} HP.`,c:'good'}); }
+  if (st.blind>0) st.blind--; if (st.weakAtk>0) st.weakAtk--; if (st.weaken>0) st.weaken--; if (st.corrode>0) st.corrode--; if (st.analyzed>0) st.analyzed--;
+  return logs;
+}
+
+async function endBattle(bId, winnerId, loserId, winnerHp, forfeit=false) {
+  const b = battles.get(bId);
+  
+  // Si es una batalla de torneo, redirigir a tournamentManager
+  if (b && b.isTournament) {
+    const { reportTournamentResult } = require('./tournamentManager');
+    await reportTournamentResult(bId, winnerId, loserId);
+    if (b.p1Wallet) walletToBattle.delete(b.p1Wallet);
+    if (b.p2Wallet) walletToBattle.delete(b.p2Wallet);
+    battles.delete(bId);
+    await pushLobby();
+    return;
+  }
+
+  const isCpu = b?.isCpu || false;
+  const isTraining = b?.isTraining || false;
+  const isLabSimulation = b?.isLabSimulation || false; 
+  const winner = lobby.get(winnerId);
+  const loser = lobby.get(loserId);
+  const hp = forfeit ? 100 : Math.max(0, Math.min(100, winnerHp));
+
+  if (isLabSimulation) {
+    if(winner) winner.ws.send(JSON.stringify({ type:'battle_end', won:true, isCpu:true, isTraining:true, isLabSimulation:true, winnerXp:0, loserXp:0 }));
+    if(loser) loser.ws.send(JSON.stringify({ type:'battle_end', won:false, isCpu:true, isTraining:true, isLabSimulation:true, winnerXp:0, loserXp:0 }));
+    if (winner) winner.inBattle = false;
+    if (loser) loser.inBattle = false;
+    battles.delete(bId);
+    await pushLobby();
+    return;
+  }
+
+  if (isTraining) {
+    const winnerXp = forfeit ? 0 : 100 + Math.max(0, Math.min(100, winnerHp));
+    const loserXp = 0;
+    if(winner) winner.ws.send(JSON.stringify({ type:'battle_end', won:true, isTraining:true, isCpu:false, winnerXp, loserXp, forfeit }));
+    if(loser) loser.ws.send(JSON.stringify({ type:'battle_end', won:false, isTraining:true, isCpu:false, winnerXp, loserXp }));
+  } else if (isCpu) {
+    const winnerXp = forfeit ? 0 : 100 + Math.max(0, Math.min(100, winnerHp));
+    if(winner) winner.ws.send(JSON.stringify({ type:'battle_end', won:true, isCpu:true, isTraining:false, winnerXp, loserXp:0, winnerHp:hp, forfeit }));
+    if(loser) loser.ws.send(JSON.stringify({ type:'battle_end', won:false, isCpu:true, isTraining:false, winnerXp, loserXp:0, winnerHp:hp }));
+  } else {
+    const winnerWallet = winner?.wallet || '';
+    const loserWallet = loser?.wallet || '';
+    const result = await settleMatch(winnerWallet, loserWallet, hp);
+    await updatePlayerStats(winnerWallet, loserWallet);
+    const wStats = await getPlayerStats(winnerWallet);
+    const lStats = await getPlayerStats(loserWallet);
+    const wRank = await getPlayerRank(winnerWallet);
+    const lRank = await getPlayerRank(loserWallet);
+    const winnerUsdc = parseFloat(((100 + hp) * USDC_PER_HP).toFixed(3));
+    const platformUsdc = parseFloat(((100 - hp) * USDC_PER_HP).toFixed(3));
+    if(winner) winner.ws.send(JSON.stringify({ type:'battle_end', won:true, isCpu:false, isTraining:false, winnerHp:hp, winnerUsdc, platformUsdc, newHp: result.winnerNewHp, forfeit, stats: { wins: wStats.wins, losses: wStats.losses, rank: wRank } }));
+    if(loser) loser.ws.send(JSON.stringify({ type:'battle_end', won:false, isCpu:false, isTraining:false, winnerHp:hp, winnerUsdc, platformUsdc, newHp: await getHP(loserWallet), stats: { wins: lStats.wins, losses: lStats.losses, rank: lRank } }));
+    const top = await getTopPlayers(3);
+    broadcast({ type: 'leaderboard_update', top });
+  }
+  if (winner) winner.inBattle=false;
+  if (loser) loser.inBattle=false;
+
+  if (b && b.p1Wallet) walletToBattle.delete(b.p1Wallet);
+  if (b && b.p2Wallet) walletToBattle.delete(b.p2Wallet);
+
+  battles.delete(bId);
+  await pushLobby();
+}
+
+async function checkDeath(bId, isP1Attacker) {
+  const b=battles.get(bId); if (!b) return false;
+  const aSt=isP1Attacker?b.st1:b.st2;
+  const dSt=isP1Attacker?b.st2:b.st1;
+  const aId=isP1Attacker?b.p1id:b.p2id;
+  const dId=isP1Attacker?b.p2id:b.p1id;
+  if (dSt.hp<=0) { await endBattle(bId,aId,dId,Math.max(0,aSt.hp)); return true; }
+  if (aSt.hp<=0) { await endBattle(bId,dId,aId,0); return true; }
+  return false;
+}
+
+async function processTurn(bId, attackerId, atkIndex) {
+  const b=battles.get(bId); if (!b) return true;
+  if (b.turnId !== attackerId) return false;
+  const isP1 = b.p1id===attackerId;
+  const aSt = isP1 ? b.st1 : b.st2;
+  const dSt = isP1 ? b.st2 : b.st1;
+  const aPlayer= lobby.get(attackerId);
+  const dPlayer= lobby.get(isP1 ? b.p2id : b.p1id);
+  if (!aPlayer||!dPlayer) return true;
+
+  b.logs.push(...tickEffects(aSt, aPlayer.name));
+  if (await checkDeath(bId, isP1)) return true;
+
+  if (aSt.stun) {
+    aSt.stun=false; b.logs.push({t:`${aPlayer.name} está aturdido y pierde su turno.`,c:'special'});
+  } else if (aSt.recharge>0) {
+    aSt.recharge--; b.logs.push({t:`${aPlayer.name} está recargando...`,c:'special'});
+  } else if (atkIndex >= 0) {
+    const atks=BEASTS[aPlayer.beast]?.attacks;
+    const atk=atks?.[atkIndex];
+    if (!atk) return false;
+    if (aSt.pp[atkIndex] <= 0) {
+      b.logs.push({t:`${aPlayer.name} intentó usar ${atk.n} pero no tiene PP. ¡Turno perdido!`,c:'bad'});
+      b.turnId = isP1 ? b.p2id : b.p1id; pushBattle(bId); autoResolveIfBlocked(bId); return false;
+    }
+    if (aSt.pp[atkIndex] < 99) aSt.pp[atkIndex]--;
+    b.logs.push(...applyAtk(aSt,dSt,atk,aPlayer.name, dPlayer.name));
+    if (await checkDeath(bId, isP1)) return true;
+  }
+  b.turnId = isP1 ? b.p2id : b.p1id;
+  pushBattle(bId); autoResolveIfBlocked(bId);
+  return false;
+}
+
+function autoResolveIfBlocked(bId) {
+  const b=battles.get(bId); if (!b) return;
+  const currentId=b.turnId;
+  const currentSt=b.p1id===currentId ? b.st1 : b.st2;
+  if (currentSt.stun || currentSt.recharge>0) {
+    setTimeout(async () => {
+      const bb=battles.get(bId); if (!bb||bb.turnId!==currentId) return;
+      await processTurn(bId, currentId, -1);
+    }, 900);
+  }
+}
+
+module.exports = {
+  newState, getStartState, applyAtk, tickEffects, 
+  endBattle, checkDeath, processTurn, autoResolveIfBlocked
+};
