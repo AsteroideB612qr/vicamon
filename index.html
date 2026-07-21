@@ -49,6 +49,8 @@
       <button class="btn btn-sm" style="width:100%;font-size:11px" onclick="checkHPNow()">Ya deposité — verificar HP</button>
     </div>
   </div>
+  <!-- NUEVO: Botón a la Guía (Fuera del login-box para estar siempre activo) -->
+  <a href="/guia.html" class="btn" style="width:90%;max-width:340px;padding:11px;display:block;text-align:center;margin-top:15px;background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:#aaa;text-decoration:none;">📖 ¿Cómo jugar? (Guía)</a>
 </div>
 
 <!-- PROFILE -->
@@ -96,7 +98,7 @@
     </div>
     <div style="background:rgba(130,80,180,.1);border:0.5px solid rgba(130,80,180,.3);border-radius:8px;padding:10px;text-align:center;margin-bottom:16px">
       <div style="font-size:11px;color:rgba(255,255,255,.4)">Rango</div>
-      <div style="font-size:14px;font-weight:600;color:#CFA9EC">🔒 Próximamente</div>
+      <div style="font-size:14px;font-weight:600;color:#CFA9EC" id="profile-tier">🥚 VicaNoob</div>
     </div>
   </div>
   
@@ -192,6 +194,7 @@
     <div id="leaderboard-podium" style="display:flex;justify-content:space-between;gap:8px">
       <div style="flex:1;color:rgba(255,255,255,.3);text-align:center;font-size:11px;padding:20px 0">Gana batallas reales para aparecer aquí</div>
     </div>
+    <button class="btn btn-sm" style="width:100%; margin-top:10px;" onclick="getFullLeaderboard()">📜 Ver Clasificación Completa</button>
   </div>
   
   <div class="lobby-zone">
@@ -392,6 +395,15 @@
     </div>
     <button class="btn btn-blue" style="width:100%; margin-bottom:10px; padding:12px" onclick="openPhantomApp()">🚀 Intentar abrir en Phantom automáticamente</button>
     <button class="btn btn-sm btn-red" style="width:100%" onclick="closeMobileConnectModal()">Cancelar</button>
+  </div>
+</div>
+
+<!-- NUEVO: MODAL CLASIFICACIÓN COMPLETA -->
+<div class="modal-bg hidden" id="modal-leaderboard">
+  <div class="modal" style="max-width:450px; text-align:left;">
+    <h3 style="text-align:center;">🏆 Clasificación Global</h3>
+    <div id="full-leaderboard-list" style="max-height: 300px; overflow-y: auto; margin-top: 15px; border-top: 1px solid #333;"></div>
+    <button class="btn btn-sm btn-red" style="margin-top: 15px; width:100%;" onclick="document.getElementById('modal-leaderboard').classList.add('hidden')">Cerrar</button>
   </div>
 </div>
 

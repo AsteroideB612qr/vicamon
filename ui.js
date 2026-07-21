@@ -169,6 +169,46 @@ function rejectChallenge(){
     pendingIsTraining=false; pendingIs3v3=false; 
 }
 
+function getFullLeaderboard() {
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({ type: 'get_full_leaderboard' }));
+  }
+}
+
+// NUEVO: Renderizar la tabla de clasificación mostrando la Clase (Tier) de cada jugador
+function renderFullLeaderboard(list) {
+  const listEl = document.getElementById('full-leaderboard-list');
+  if (!list || list.length === 0) {
+    listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Aún no hay jugadores clasificados. ¡Sé el primero!</div>';
+    document.getElementById('modal-leaderboard').classList.remove('hidden');
+    return;
+  }
+  
+  const tierNames = {
+    1: { name: '👑 VicaLegend', color: '#F6E265' },
+    2: { name: '🌌 VicaMaster', color: '#CFA9EC' },
+    3: { name: '⚔️ VicaWarrior', color: '#85B7EB' },
+    4: { name: '🛸 VicaExplorer', color: '#5DCAA5' },
+    5: { name: '🎓 VicaTrainer', color: '#F0997B' }
+  };
+  
+  let html = '<table style="width:100%; border-collapse: collapse; font-size:13px;">';
+  list.forEach((p, i) => {
+    const rank = p.rank || (i + 1);
+    const tierInfo = tierNames[p.tier] || tierNames[5];
+    html += `<tr style="border-bottom:1px solid #2a2a35;">
+      <td style="padding:8px; width:40px; text-align:center; font-weight:bold; color:#aaa;">#${rank}</td>
+      <td style="padding:8px; font-weight:600; text-transform:uppercase;">${p.last_name || 'Anónimo'}</td>
+      <td style="padding:8px; font-size:11px; color:${tierInfo.color}; white-space:nowrap;">${tierInfo.name}</td>
+      <td style="padding:8px; text-align:right; color:#5DCAA5;">${p.wins}V</td>
+      <td style="padding:8px; text-align:right; color:#F0997B; width:40px;">${p.losses}D</td>
+    </tr>`;
+  });
+  html += '</table>';
+  listEl.innerHTML = html;
+  document.getElementById('modal-leaderboard').classList.remove('hidden');
+}
+
 function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
 function sendChatMessage(){ const input = document.getElementById('chat-input'); const msg = input.value.trim(); if(msg && ws && ws.readyState === 1){ ws.send(JSON.stringify({type:'chat_message', text:msg})); input.value = ''; } }
 function handleChatMessage(m){ const chatBox = document.getElementById('chat-box'); if(chatBox.querySelector('.chat-empty')) chatBox.innerHTML = ''; const msgDiv = document.createElement('div'); msgDiv.className = 'chat-msg'; msgDiv.innerHTML = `<span class="chat-name">${escapeHtml(m.name)}:</span> <span style="color:rgba(255,255,255,.8)">${escapeHtml(m.text)}</span>`; chatBox.appendChild(msgDiv); chatBox.scrollTop = chatBox.scrollHeight; }

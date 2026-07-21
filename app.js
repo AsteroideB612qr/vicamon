@@ -93,6 +93,11 @@ function handleMsg(m){
   if(m.type==='opponent_reconnected'){ const turnBar = document.getElementById('turn-bar'); if(turnBar) turnBar.innerHTML = '<span>Turno del rival...</span>'; }
   if(m.type==='reconnect_battle'){ battleId = m.battleId; myRole = m.role; oppName = m.opponent; myId = m.id; myBeast = m.myBeast; oppBeast = m.oppBeast; window._isTeamBattle = !!m.isTeamBattle; show('s-battle'); const turnBar = document.getElementById('turn-bar'); if(turnBar) turnBar.innerHTML = '<span style="color:#5DCAA5">✓ ¡Reconectado con éxito! Sincronizando...</span>'; }
   
+  // NUEVO: Recibir lista de clasificación completa
+  if(m.type === 'full_leaderboard') { 
+    renderFullLeaderboard(m.list); 
+  }
+  
   if(m.type==='battle_end'){ 
     const won=m.won; const isCpuResult = m.isCpu === true; const isTrainingResult = m.isTraining === true; const isGauntletResult = m.isGauntlet === true; const isTeamResult = m.isTeamBattle === true; const isTournamentResult = m.isTournament === true; const winnerHp=m.winnerHp||0; const newHp=m.newHp||0; 
     if(m.stats) updateProfileUI(m.stats); show('s-result'); 
@@ -101,19 +106,16 @@ function handleMsg(m){
     if(isGauntletResult && !isGuest) updateHPDisplay(newHp); 
     if(isTeamResult && !isTrainingResult && !isGuest) updateHPDisplay(newHp); 
     
-    // NUEVO: Lógica FOMO dinámica para invitados
     let fomoMsg = '';
     let fomoBtn = '';
     if (isGuest) {
         fomoBtn = `<button class="btn btn-blue" style="margin-top:15px;width:100%;background:rgba(246,226,102,.2);border-color:rgba(246,226,102,.4);color:#F6E265" onclick="connectPhantom()">👻 Conectar Wallet y Ganar HP Real</button>`;
-        
         let myXpTemp = 0;
         if (won) {
             if (isTeamResult && isTrainingResult) myXpTemp = m.winnerXp || 0;
             else if (isTrainingResult) myXpTemp = m.winnerXp || 0;
             else if (isCpuResult) myXpTemp = m.winnerXp || 0;
         }
-        
         if (won && (isTrainingResult || isCpuResult)) {
             const usdEq = (myXpTemp * 0.001).toFixed(3);
             fomoMsg = `<div style="margin-top:12px;padding:12px;background:rgba(246,226,102,.1);border:1px solid rgba(246,226,102,.3);border-radius:8px;color:#F6E265;font-size:13px;line-height:1.5;">💡 <b>¡Estás perdiendo dinero!</b><br>Ganaste ${myXpTemp} XP, pero si tuvieras tu Wallet conectada, habrías ganado <b>${myXpTemp} HP ($${usdEq} USDC)</b> reales.</div>`;

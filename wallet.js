@@ -2,7 +2,7 @@ var myWallet = '';
 var myCurrentHP = 0;
 var isGuest = false;
 var myPhysicalBeasts = [];
-var myStats = { wins: 0, losses: 0, rank: null };
+var myStats = { wins: 0, losses: 0, rank: null, tier: 0 };
 var platformWalletAddress = ''; 
 
 async function fetchPlatformWallet() { try { const res = await fetch('/platform-wallet'); const data = await res.json(); if (data.wallet) { platformWalletAddress = data.wallet; const loginWalletSpan = document.querySelector('#step-charge div[onclick="copyWallet()"] span'); if (loginWalletSpan) loginWalletSpan.textContent = platformWalletAddress; } } catch(e) { console.error("Error cargando wallet de plataforma:", e); } }
@@ -33,7 +33,6 @@ async function connectPhantom() {
       document.getElementById('modal-mobile-connect').classList.remove('hidden');
       return; 
     }
-    // FIX: Alerta si no tiene Phantom en PC
     alert('⚠️ Phantom no detectado. Debes instalar la extensión de Phantom en tu navegador para conectar tu wallet y jugar por HP.');
     document.getElementById('no-phantom').style.display='block'; 
     document.getElementById('no-phantom').innerHTML = 'Phantom no detectado. <a href="https://phantom.app" target="_blank" style="color:#F0997B;text-decoration:underline">Instalalo aqui</a>.'; 
@@ -70,7 +69,42 @@ window.addEventListener('load', async () => {
 
 async function checkHPNow(fromConnect=false) { if (!myWallet || isGuest) return; try { const res = await fetch('/hp?wallet='+myWallet); const data = await res.json(); const hp = data.hp || 0; const loginHp = document.getElementById('wallet-hp'); if(loginHp){ loginHp.textContent=hp+' HP'; loginHp.style.color=hp>=100?'#5DCAA5':'#EF9F27'; } updateHPDisplay(hp); if (data.stats) updateProfileUI(data.stats); if(document.getElementById('s-lobby').classList.contains('active') && ws){ ws.send(JSON.stringify({type:'ping'})); } if (hp >= 100) { document.getElementById('step-charge').style.display='none'; document.getElementById('step-name').style.opacity='1'; document.getElementById('step-name').style.pointerEvents='auto'; } else { document.getElementById('step-charge').style.display='block'; document.getElementById('step-name').style.opacity='1'; document.getElementById('step-name').style.pointerEvents='auto'; } } catch(e) { document.getElementById('wallet-hp').textContent = 'Error'; } }
 
-function updateProfileUI(stats) { if (stats) myStats = stats; const nameEl = document.getElementById('profile-name'); if (nameEl) { nameEl.textContent = myName || 'Jugador'; document.getElementById('profile-wallet').textContent = isGuest ? 'Modo Invitado (Sin Wallet)' : (myWallet ? myWallet.slice(0,8)+'...'+myWallet.slice(-6) : 'Desconectado'); document.getElementById('profile-wallet-box').style.display = isGuest ? 'none' : 'block'; document.getElementById('profile-wins').textContent = myStats.wins || 0; document.getElementById('profile-losses').textContent = myStats.losses || 0; document.getElementById('profile-rank').textContent = myStats.rank ? '#' + myStats.rank : 'Sin clasificado'; document.getElementById('guest-upgrade-banner').style.display = isGuest ? 'block' : 'none'; } }
+// NUEVO: Nombres de Rangos estilo Vicamon
+function updateProfileUI(stats) { 
+  if (stats) myStats = stats; 
+  const nameEl = document.getElementById('profile-name'); 
+  if (nameEl) { 
+    nameEl.textContent = myName || 'Jugador'; 
+    document.getElementById('profile-wallet').textContent = isGuest ? 'Modo Invitado (Sin Wallet)' : (myWallet ? myWallet.slice(0,8)+'...'+myWallet.slice(-6) : 'Desconectado'); 
+    document.getElementById('profile-wallet-box').style.display = isGuest ? 'none' : 'block'; 
+    document.getElementById('profile-wins').textContent = myStats.wins || 0; 
+    document.getElementById('profile-losses').textContent = myStats.losses || 0; 
+    
+    const tierNames = {
+      0: { name: '🥚 VicaNoob', color: '#aaa' },
+      1: { name: '👑 VicaLegend', color: '#F6E265' },
+      2: { name: '🌌 VicaMaster', color: '#CFA9EC' },
+      3: { name: '⚔️ VicaWarrior', color: '#85B7EB' },
+      4: { name: '🛸 VicaExplorer', color: '#5DCAA5' },
+      5: { name: '🎓 VicaTrainer', color: '#F0997B' }
+    };
+    
+    const tierInfo = tierNames[myStats.tier || 0];
+    const rankEl = document.getElementById('profile-rank');
+    const tierEl = document.getElementById('profile-tier');
+    
+    if(rankEl) {
+      rankEl.textContent = tierInfo.name;
+      rankEl.style.color = tierInfo.color;
+    }
+    if(tierEl) {
+      tierEl.textContent = tierInfo.name;
+      tierEl.style.color = tierInfo.color;
+    }
+    
+    document.getElementById('guest-upgrade-banner').style.display = isGuest ? 'block' : 'none'; 
+  } 
+}
 
 function updateHPDisplay(hp){ 
   if(isGuest) hp = 0; 
