@@ -77,7 +77,22 @@ function handleMsg(m){
   if(m.type === 'tournament_wait') { alert(m.msg); }
   if(m.type === 'tournament_end') { alert(m.msg); myTournamentMode = null; show('s-lobby'); }
 
-  if(m.type==='gauntlet_next'){ gauntletBattleId = m.battleId; gauntletSelectedBeast = myBeast; const b = BEASTS[m.nextBeast]; document.getElementById('g-title').textContent = `¡Jefe ${m.round - 1}/12 derrotado!`; document.getElementById('g-sub').innerHTML = `El próximo rival es <strong style="color:#CFA9EC">${b.name}</strong> (${m.round}/12).`; const picker = document.getElementById('g-beast-picker'); picker.innerHTML = Object.entries(BEASTS).map(([k,b])=>`<div class="bcard" id="gbc-${k}" style="padding:5px" onclick="selectGauntletBeast('${k}')"><img src="${b.img}" style="width:50px;height:50px"><div class="bname" style="font-size:10px">${b.name}</div></div>`).join(''); document.getElementById('gbc-'+myBeast)?.classList.add('sel'); document.getElementById('modal-gauntlet').classList.remove('hidden'); return; }
+  if(m.type==='gauntlet_next'){ 
+    gauntletBattleId = m.battleId; 
+    gauntletSelectedBeast = myBeast; 
+    const b = BEASTS[m.nextBeast]; 
+    document.getElementById('g-title').textContent = `¡Jefe ${m.round - 1}/12 derrotado!`; 
+    document.getElementById('g-sub').innerHTML = `El próximo rival es <strong style="color:#CFA9EC">${b.name}</strong> (${m.round}/12).`; 
+    const picker = document.getElementById('g-beast-picker'); 
+    
+    // FIX: Filtrar los Vicamons físicos (Iron Dog, Tunqui) si no han sido invocados
+    const availableKeys = Object.entries(BEASTS).filter(([k,b]) => b.cat !== 'Físico' || (myPhysicalBeasts || []).includes(k));
+    picker.innerHTML = availableKeys.map(([k,b])=>`<div class="bcard" id="gbc-${k}" style="padding:5px" onclick="selectGauntletBeast('${k}')"><img src="${b.img}" style="width:50px;height:50px"><div class="bname" style="font-size:10px">${b.name}</div></div>`).join(''); 
+    
+    document.getElementById('gbc-'+myBeast)?.classList.add('sel'); 
+    document.getElementById('modal-gauntlet').classList.remove('hidden'); 
+    return; 
+  }
   if(m.type==='challenged'){ pendingFrom=m.fromId; pendingIsTraining = !!m.isTraining; pendingIs3v3 = false; const b=BEASTS[m.fromBeast]||{name:m.fromBeast,img:''}; document.getElementById('ch-img').src=b.img; document.getElementById('ch-title').textContent=`¡Reto de ${m.fromName}!`; document.getElementById('ch-sub').textContent=pendingIsTraining ? `${m.fromName} quiere un ENTRENAMIENTO 1v1.` : `${m.fromName} quiere una BATALLA POR HP 1v1 (100 HP).`; document.getElementById('modal-challenged').classList.remove('hidden'); startChallengeBeep(); }
   if(m.type==='challenged_3v3'){ pendingFrom=m.fromId; pendingIs3v3 = true; pendingIsTraining = !!m.isTraining; document.getElementById('ch-img').src='vicamon-logo.png'; document.getElementById('ch-title').textContent=`¡Reto 3v3 de ${m.fromName}!`; document.getElementById('ch-sub').textContent=pendingIsTraining ? `${m.fromName} quiere un ENTRENAMIENTO 3v3.` : `${m.fromName} quiere una BATALLA POR HP 3v3 (300 HP).`; document.getElementById('modal-challenged').classList.remove('hidden'); startChallengeBeep(); }
   if(m.type==='battle_start'){ battleId=m.battleId; myRole=m.role; oppName=m.opponent; oppBeast=m.opponentBeast; window._isTeamBattle = !!m.isTeamBattle; const empty={hp:100,maxHp:100,poisonDmg:0,poisonTurns:0,burnDmg:0,burnTurns:0,shield:0,shieldReflect:0,reflect50:0,stun:false,recharge:0,regen:0,regenTurns:0,blind:0,weakAtk:0,weaken:0,corrode:0,analyzed:0,lastDmgReceived:0,pp:[]}; mySt={...empty}; oppSt={...empty}; const isCpu=!!m.isCpu; const isTraining=!!m.isTraining; let startMsg = `¡Batalla por HP! ${myName} vs ${oppName}`; if(isTraining) startMsg = `¡Entrenamiento! ${myName} vs ${oppName}`; show('s-battle'); renderBattle(!isCpu,[{t:startMsg,c:'hi'}]); }
@@ -163,4 +178,12 @@ function handleMsg(m){
   }
 }
 
-document.getElementById('inp-name').addEventListener('keydown',e=>{if(e.key==='Enter')goProfile();});
+// Asegurarnos de que BEASTS esté cargado antes de iniciar
+function checkBeastsAndInit() {
+  if (window.BEASTS) {
+    document.getElementById('inp-name').addEventListener('keydown',e=>{if(e.key==='Enter')goProfile();});
+  } else {
+    setTimeout(checkBeastsAndInit, 50);
+  }
+}
+checkBeastsAndInit();

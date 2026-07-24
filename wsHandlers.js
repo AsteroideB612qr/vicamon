@@ -30,8 +30,25 @@ function handleDcAutoSkip(bId) {
   }
 }
 
+// Función para mantener vivas las conexiones (Heartbeat)
+function heartbeat() {
+  this.isAlive = true;
+}
+
 function setupWebSocketServer(wss, getPlatformUSDCBalance) {
+  // Limpiar conexiones fantasmas cada 30 segundos (Evita memory leaks en Render)
+  const interval = setInterval(() => {
+    wss.clients.forEach(ws => {
+      if (ws.isAlive === false) return ws.terminate();
+      ws.isAlive = false;
+      ws.ping();
+    });
+  }, 30000);
+
   wss.on('connection', ws => {
+    ws.isAlive = true;
+    ws.on('pong', heartbeat);
+    
     const id = uid();
 
     ws.on('message', async raw => {

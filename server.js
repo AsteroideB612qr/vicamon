@@ -15,7 +15,7 @@ const { sendUSDC } = require('./transfer');
 
 const { setupWebSocketServer } = require('./wsHandlers');
 const { initializeContent } = require('./contentManager');
-const { runMetaSimulation } = require('./simulatorManager'); // NUEVO: Simulador
+const { runMetaSimulation } = require('./simulatorManager');
 
 const ADMIN_PASS = process.env.ADMIN_PASSWORD || process.env.INTERNAL_SECRET || '';
 const OWNER_WALLET = process.env.OWNER_WALLET || ''; 
@@ -55,6 +55,14 @@ const MIME = { '.html':'text/html', '.js':'application/javascript', '.css':'text
 const server = http.createServer(async (req, res) => {
   const urlPath = req.url.split('?')[0];
   
+  // NUEVO: Endpoint para que el frontend lea de la base de datos
+  if (urlPath === '/api/beasts') {
+    const BEASTS_DB = global.BEASTS_DB || require('./beasts.js');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(BEASTS_DB));
+    return;
+  }
+
   if (urlPath === '/ver-db-secreta') { try { const players = await getAllPlayersDebug(); res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(players, null, 2)); } catch(e) { res.writeHead(500); res.end('Error leyendo DB'); } return; }
   if (urlPath === '/platform-wallet') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ wallet: PLATFORM_WALLET })); return; }
 
@@ -136,7 +144,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   
-  // NUEVO: RUTA SIMULADOR
+  // RUTA SIMULADOR
   if (urlPath === '/admin-run-simulation' && req.method === 'POST') {
     let body = ''; req.on('data', c => body += c); req.on('end', async () => {
       try {
@@ -168,10 +176,20 @@ const server = http.createServer(async (req, res) => {
 });
 
 const wss = new WebSocketServer({ server });
+
 setupWebSocketServer(wss, getPlatformUSDCBalance);
+
 setTimeout(() => { try { require('./payment-monitor'); } catch(e) { console.error('[ERROR] Monitor:', e.message); } }, 5000);
 
 initializeContent().then(() => {
   const PORT = process.env.PORT || 3000;
   server.listen(PORT, () => console.log(`Zodiac Battle corriendo en http://localhost:${PORT}`));
+});
+
+// BLINDAJE DEL SERVIDOR: Capturar errores globales para que Render nunca se caiga
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('⚠️ Promesa no capturada (esto no tirará el servidor):', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ Excepción no capturada (esto no tirará el servidor):', err);
 });

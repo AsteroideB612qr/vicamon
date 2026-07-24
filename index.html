@@ -49,7 +49,7 @@
       <button class="btn btn-sm" style="width:100%;font-size:11px" onclick="checkHPNow()">Ya deposité — verificar HP</button>
     </div>
   </div>
-  <!-- NUEVO: Botón a la Guía (Fuera del login-box para estar siempre activo) -->
+  <!-- Botón a la Guía (Fuera del login-box para estar siempre activo) -->
   <a href="/guia.html" class="btn" style="width:90%;max-width:340px;padding:11px;display:block;text-align:center;margin-top:15px;background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:#aaa;text-decoration:none;">📖 ¿Cómo jugar? (Guía)</a>
 </div>
 
@@ -398,7 +398,7 @@
   </div>
 </div>
 
-<!-- NUEVO: MODAL CLASIFICACIÓN COMPLETA -->
+<!-- MODAL CLASIFICACIÓN COMPLETA -->
 <div class="modal-bg hidden" id="modal-leaderboard">
   <div class="modal" style="max-width:450px; text-align:left;">
     <h3 style="text-align:center;">🏆 Clasificación Global</h3>
@@ -409,12 +409,33 @@
 
 <!-- SCRIPTS -->
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-<script src="beasts.js"></script>
-<script src="audio.js"></script>
-<script src="wallet.js"></script>
-<script src="ui.js"></script>
-<script src="lab.js"></script>
-<script src="tournament.js"></script>
-<script src="app.js"></script>
+<script>
+  // NUEVO: Cargar bestiario dinámicamente desde la base de datos
+  fetch('/api/beasts')
+    .then(r => r.json())
+    .then(data => {
+      window.BEASTS = data; // Inyectamos los datos de la BD en el navegador
+      // Ahora que tenemos los datos, cargamos el resto de los scripts
+      ['audio.js', 'wallet.js', 'ui.js', 'lab.js', 'tournament.js', 'app.js'].forEach(src => {
+        const s = document.createElement('script');
+        s.src = src;
+        document.head.appendChild(s);
+      });
+    })
+    .catch(err => {
+      console.error("Error cargando BD, usando fallback:", err);
+      // Si la BD falla, usamos el beasts.js local estático para que el juego no se rompa
+      const s = document.createElement('script');
+      s.src = 'beasts.js';
+      s.onload = () => {
+        ['audio.js', 'wallet.js', 'ui.js', 'lab.js', 'tournament.js', 'app.js'].forEach(src => {
+          const sc = document.createElement('script');
+          sc.src = src;
+          document.head.appendChild(sc);
+        });
+      };
+      document.head.appendChild(s);
+    });
+</script>
 </body>
 </html>
