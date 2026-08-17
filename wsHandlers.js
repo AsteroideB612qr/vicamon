@@ -167,8 +167,21 @@ function setupWebSocketServer(wss, getPlatformUSDCBalance) {
 
         if (msg.type === 'cashout') { const pl = lobby.get(id); if (!pl || pl.inBattle || pl.isGuest) { send(ws, { type: 'cashout_result', ok: false, reason: 'No permitido para invitados' }); return; } const currentHp = await getHP(pl.wallet); if (currentHp <= 0) { send(ws, { type: 'cashout_result', ok: false, reason: 'Sin HP' }); return; } const usdcNeeded = parseFloat((currentHp * 0.001).toFixed(6)); getPlatformUSDCBalance().then(async balance => { if (balance < usdcNeeded) { send(ws, { type: 'cashout_result', ok: false, reason: `Fondos insuficientes en la plataforma.` }); return; } const result = await cashout(pl.wallet); if (!result.ok) { send(ws, { type: 'cashout_result', ok: false, reason: 'Error' }); return; } send(ws, { type: 'cashout_result', ok: true, hp: result.hp, usdc: result.usdc, status: 'processing' }); sendUSDC(pl.wallet, result.usdc).then(sig => send(ws, { type: 'cashout_result', ok: true, hp: result.hp, usdc: result.usdc, status: 'confirmed', tx: sig })).catch(async e => { await addHP(pl.wallet, result.hp); send(ws, { type: 'cashout_result', ok: false, reason: e.message }); }); }).catch(e => send(ws, { type: 'cashout_result', ok: false, reason: 'Error de balance' })); }
         if (msg.type === 'chat_message') { const p = lobby.get(id); if (!p) return; broadcast({ type: 'chat_message', name: p.name, text: (msg.text || '').slice(0, 200) }); }
+        
         if (msg.type === 'ping') { 
-          const p = lobby.get(id); if (p) { send(ws, { type: 'hp_updated', hp: p.isGuest ? 0 : await getHP(p.wallet || '') }); await pushLobby(); } 
+          const p = lobby.get(id); 
+          if (p) { 
+            // BLINDAJE: Si la base de datos falla al leer el HP en el ping, no rompemos el servidor ni spameamos errores al usuario
+            try {
+              if (!p.isGuest) {
+                const hp = await getHP(p.wallet || '');
+                send(ws, { type: 'hp_updated', hp: hp });
+              }
+              await pushLobby();
+            } catch(dbErr) {
+              console.error("Error de BD en ping (no crítico):", dbErr.message);
+            }
+          }
           const withdrawCheck = await checkOwnerWithdrawal();
           if (withdrawCheck.shouldWithdraw) {
             try {
